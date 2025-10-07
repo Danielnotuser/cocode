@@ -22,7 +22,17 @@
     </div>
 </nav>
 <main>
-    {{block "content" .}}{{end}}
+    {{if .Username}}
+    <!-- Для авторизованных пользователей (dashboard) -->
+        {{template "dashboard-content" .}}
+    {{else}}
+    <!-- Для неавторизованных пользователей -->
+        {{if eq .Template "login"}}
+            {{template "login-content" .}}
+        {{else if eq .Template "register"}}
+            {{template "register-content" .}}
+        {{end}}
+    {{end}}
 </main>
 </body>
 </html>

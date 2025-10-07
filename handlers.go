@@ -4,6 +4,12 @@ import (
 	"net/http"
 )
 
+type PageData struct {
+	Username string
+	Sessions map[string]string
+	Template string
+}
+
 func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	// Проверяем авторизацию
 	cookie, err := r.Cookie("username")
@@ -12,15 +18,13 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := struct {
-		Username string
-		Sessions map[string]string
-	}{
+	data := PageData{
 		Username: cookie.Value,
 		Sessions: sessions,
+		Template: "dashboard",
 	}
 
-	err = templates.ExecuteTemplate(w, "dashboard.html", data)
+	err = templates.ExecuteTemplate(w, "base.html", data)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -42,7 +46,9 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := templates.ExecuteTemplate(w, "register.html", nil)
+	data := PageData{Template: "register"}
+	err := templates.ExecuteTemplate(w, "base.html", data)
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -67,7 +73,9 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := templates.ExecuteTemplate(w, "login.html", nil)
+	data := PageData{Template: "login"}
+	err := templates.ExecuteTemplate(w, "base.html", data)
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
