@@ -1,0 +1,31 @@
+{{template "base.html" .}}
+
+{{define "content"}}
+<div class="dashboard-container">
+    <h2>Welcome, {{.Username}}!</h2>
+
+    <div class="create-session">
+        <h3>Create New Session</h3>
+        <form action="/create-session" method="POST">
+            <label>
+                <input type="text" name="session_id" placeholder="Enter Session ID" required>
+            </label>
+            <button type="submit">Create Session</button>
+        </form>
+    </div>
+
+    <div class="sessions-list">
+        <h3>Active Sessions</h3>
+        {{if .Sessions}}
+        {{range $id, $user := .Sessions}}
+        <div class="session-item">
+            <strong>Session ID:</strong> {{$id}} <br>
+            <strong>Owner:</strong> {{$user}}
+        </div>
+        {{end}}
+        {{else}}
+        <p>No active sessions</p>
+        {{end}}
+    </div>
+</div>
+{{end}}
