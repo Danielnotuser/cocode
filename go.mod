@@ -1,3 +1,3 @@
-module live-editor
+module cocode
 
 go 1.21

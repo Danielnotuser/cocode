@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cocode-test
+  labels:
+    app: cocode-test
+spec:
+  replicas: 2  # Ровно 2 пода для тестирования
+  selector:
+    matchLabels:
+      app: cocode-test
+  template:
+    metadata:
+      labels:
+        app: cocode-test
+      annotations:
+        test-pod: "true"
+    spec:
+      containers:
+        - name: cocode
+          image: cocode:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: app_test
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: 192.168.1.101
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
