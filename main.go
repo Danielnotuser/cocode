@@ -6,12 +6,11 @@ import (
 	"net/http"
 )
 
-var sessions = make(map[string]string)
+var sessions = make(map[string]Session)
 var users = make(map[string]string)
 var templates *template.Template
 
 func main() {
-	// Загружаем шаблоны
 	var err error
 	templates, err = template.ParseGlob("templates/*.html")
 	if err != nil {
@@ -22,6 +21,8 @@ func main() {
 	http.HandleFunc("/register", registerHandler)
 	http.HandleFunc("/login", loginHandler)
 	http.HandleFunc("/create-session", createSessionHandler)
+	http.HandleFunc("/editor", editorHandler)
+	http.HandleFunc("/delete-session", deleteSessionHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
 	log.Println("Server started on http://localhost:8080")

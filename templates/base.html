@@ -24,7 +24,11 @@
 <main>
     {{if .Username}}
     <!-- Для авторизованных пользователей (dashboard) -->
-        {{template "dashboard-content" .}}
+        {{if eq .Template "dashboard"}}
+            {{template "dashboard-content" .}}
+        {{else if eq .Template "editor"}}
+            {{template "editor-content" .}}
+        {{end}}
     {{else}}
     <!-- Для неавторизованных пользователей -->
         {{if eq .Template "login"}}

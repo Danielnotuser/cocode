@@ -1,0 +1,20 @@
+{{template "base.html" .}}
+
+{{define "editor-content"}}
+<div class="editor-container">
+    <div class="editor-header">
+        <h2>Editor: {{.Session.ProjectName}}</h2>
+        <div class="session-info">
+            <span>Language: {{.Session.Language}}</span>
+            <span>Session ID: {{.SessionID}}</span>
+            <span>Owner: {{.Session.Owner}}</span>
+        </div>
+    </div>
+
+    <div class="editor-area">
+        <label>
+            <textarea class="code-editor" placeholder="Start writing your code here..."></textarea>
+        </label>
+    </div>
+</div>
+{{end}}
