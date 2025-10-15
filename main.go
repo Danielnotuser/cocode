@@ -21,10 +21,10 @@ func main() {
 	}
 	// Create tables if not exist
 	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS users (
-			username TEXT PRIMARY KEY,
-			password TEXT NOT NULL
-		);
+		   CREATE TABLE IF NOT EXISTS users (
+			   username TEXT PRIMARY KEY,
+			   password_hash TEXT NOT NULL
+		   );
 		CREATE TABLE IF NOT EXISTS sessions (
 			session_id TEXT PRIMARY KEY,
 			username TEXT NOT NULL,
@@ -35,7 +35,7 @@ func main() {
 		log.Fatal("Error creating tables:", err)
 	}
 
-	// Загружаем шаблоны
+	// Load templates
 	templates, err = template.ParseGlob("templates/*.html")
 	if err != nil {
 		log.Fatal("Error loading templates:", err)
