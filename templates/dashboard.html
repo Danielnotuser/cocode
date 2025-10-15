@@ -8,9 +8,6 @@
         <h3>Create New Session</h3>
         <form action="/create-session" method="POST">
             <label>
-                <input type="text" name="session_id" placeholder="Enter Session ID" required>
-            </label>
-            <label>
                 <input type="text" name="project_name" placeholder="Project Name" required>
             </label>
             <label>
@@ -38,15 +35,14 @@
                     {{$session.ProjectName}}
                 </a>
                 {{if eq $session.Owner $.Username}}
-                <form action="/delete-session" method="POST" class="delete-form">
-                    <input type="hidden" name="session_id" value="{{$id}}">
+                <form action="/delete-session?session_id={{$id}}" method="POST" class="delete-form">
                     <button type="submit" class="btn-delete">Delete</button>
                 </form>
                 {{end}}
             </div>
             <div class="session-details">
                 <span><strong>Language:</strong> {{$session.Language}}</span>
-                <span><strong>ID:</strong> {{$id}}</span>
+                <span><strong>Session ID:</strong> {{$id}}</span>
                 <span><strong>Owner:</strong> {{$session.Owner}}</span>
             </div>
         </div>

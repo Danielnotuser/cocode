@@ -18,6 +18,7 @@ type PageData struct {
 }
 
 type Session struct {
+	SessionID   int
 	Owner       string
 	Language    string
 	ProjectName string
@@ -49,7 +50,7 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	username := claims["username"].(string)
 
 	// Get sessions from db (join users for username)
-	rows, err := db.Query(`SELECT s.session_id, u.username, s.language, s.project_name FROM sessions s JOIN users u ON s.user_id = u.user_id`)
+	rows, err := db.Query(`SELECT s.session_id, u.username, s.language, s.project_name FROM sessions s JOIN users u ON s.user_id = u.user_id WHERE `)
 	if err != nil {
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
@@ -201,14 +202,9 @@ func createSessionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	username := claims["username"].(string)
 
-	sessionID := r.FormValue("session_id")
 	language := r.FormValue("language")
 	projectName := r.FormValue("project_name")
 
-	if sessionID == "" {
-		http.Error(w, "Session ID required", http.StatusBadRequest)
-		return
-	}
 	if language == "" || projectName == "" {
 		http.Error(w, "Language and Project Name required", http.StatusBadRequest)
 		return
@@ -221,7 +217,7 @@ func createSessionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Insert session into DB
-	_, err = db.Exec("INSERT OR REPLACE INTO sessions(session_id, user_id, language, project_name) VALUES (?, ?, ?, ?)", sessionID, userID, language, projectName)
+	_, err = db.Exec("INSERT OR REPLACE INTO sessions(user_id, language, project_name) VALUES (?, ?, ?)", userID, language, projectName)
 	if err != nil {
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
@@ -293,55 +289,55 @@ func editorHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func deleteSessionHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "POST" {
-		// Auth via JWT
-		jwtCookie, err := r.Cookie("jwt")
-		if err != nil {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
-			return
-		}
-		secret := os.Getenv("JWT_SECRET")
-		if secret == "" {
-			secret = "dev_secret"
-		}
-		token, err := jwt.Parse(jwtCookie.Value, func(token *jwt.Token) (interface{}, error) {
-			return []byte(secret), nil
-		})
-		if err != nil || !token.Valid {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
-			return
-		}
-		claims, ok := token.Claims.(jwt.MapClaims)
-		if !ok || claims["username"] == nil {
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
-			return
-		}
-		username := claims["username"].(string)
-
-		sessionID := r.FormValue("session_id")
-		var dbUserID int
-		err = db.QueryRow(`SELECT s.user_id FROM sessions s WHERE s.session_id = ?`, sessionID).Scan(&dbUserID)
-		if err == sql.ErrNoRows {
-			http.Error(w, "Session not found or access denied", http.StatusForbidden)
-			return
-		} else if err != nil {
-			http.Error(w, "DB error", http.StatusInternalServerError)
-			return
-		}
-		// Get user_id for username
-		var userID int
-		err = db.QueryRow("SELECT user_id FROM users WHERE username = ?", username).Scan(&userID)
-		if err != nil || dbUserID != userID {
-			http.Error(w, "Session not found or access denied", http.StatusForbidden)
-			return
-		}
-		// Delete session from DB
-		_, err = db.Exec("DELETE FROM sessions WHERE session_id = ?", sessionID)
-		if err != nil {
-			http.Error(w, "DB error", http.StatusInternalServerError)
-			return
-		}
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
-	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	// Auth via JWT
+	jwtCookie, err := r.Cookie("jwt")
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		secret = "dev_secret"
+	}
+	token, err := jwt.Parse(jwtCookie.Value, func(token *jwt.Token) (interface{}, error) {
+		return []byte(secret), nil
+	})
+	if err != nil || !token.Valid {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || claims["username"] == nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	username := claims["username"].(string)
+	sessionID := r.URL.Query().Get("session_id")
+	var dbUserID int
+	err = db.QueryRow(`SELECT s.user_id FROM sessions s WHERE s.session_id = ?`, sessionID).Scan(&dbUserID)
+	if err == sql.ErrNoRows {
+		http.Error(w, "Session not found or access denied", http.StatusForbidden)
+		return
+	} else if err != nil {
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+	// Get user_id for username
+	var userID int
+	err = db.QueryRow("SELECT user_id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil || dbUserID != userID {
+		http.Error(w, "Session not found or access denied", http.StatusForbidden)
+		return
+	}
+	// Delete session from DB
+	_, err = db.Exec("DELETE FROM sessions WHERE session_id = ?", sessionID)
+	if err != nil {
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

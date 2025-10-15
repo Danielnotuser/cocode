@@ -9,8 +9,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-var sessions = make(map[string]Session)
-var users = make(map[string]string)
+// var sessions = make(map[string]Session)
+// var users = make(map[string]string)
 var templates *template.Template
 var db *sql.DB
 
@@ -28,7 +28,7 @@ func main() {
 			password_hash TEXT NOT NULL
 		);
 		CREATE TABLE IF NOT EXISTS sessions (
-			session_id TEXT PRIMARY KEY,
+			session_id INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_id INTEGER NOT NULL,
 			language TEXT,
 			project_name TEXT,
