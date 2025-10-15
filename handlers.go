@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"net/http"
 )
 
@@ -8,6 +9,7 @@ type PageData struct {
 	Username string
 	Sessions map[string]string
 	Template string
+	Warning  string
 }
 
 func dashboardHandler(w http.ResponseWriter, r *http.Request) {
@@ -16,6 +18,21 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
+	}
+
+	// Получаем все сессии из БД
+	rows, err := db.Query("SELECT session_id, username FROM sessions")
+	if err != nil {
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+	sessions := make(map[string]string)
+	for rows.Next() {
+		var sid, uname string
+		if err := rows.Scan(&sid, &uname); err == nil {
+			sessions[sid] = uname
+		}
 	}
 
 	data := PageData{
@@ -32,21 +49,33 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func registerHandler(w http.ResponseWriter, r *http.Request) {
+	var warning string
 	if r.Method == "POST" {
 		username := r.FormValue("username")
 		password := r.FormValue("password")
 
-		if _, exists := users[username]; exists {
-			http.Error(w, "User already exists", http.StatusBadRequest)
+		// Check if user exists
+		var exists int
+		err := db.QueryRow("SELECT COUNT(*) FROM users WHERE username = ?", username).Scan(&exists)
+		if err != nil {
+			http.Error(w, "DB error", http.StatusInternalServerError)
 			return
 		}
-
-		users[username] = password
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
+		if exists > 0 {
+			warning = "User already exists. Please choose another username."
+		} else {
+			// Insert user
+			_, err = db.Exec("INSERT INTO users(username, password) VALUES (?, ?)", username, password)
+			if err != nil {
+				http.Error(w, "DB error", http.StatusInternalServerError)
+				return
+			}
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
 	}
 
-	data := PageData{Template: "register"}
+	data := PageData{Template: "register", Warning: warning}
 	err := templates.ExecuteTemplate(w, "base.html", data)
 
 	if err != nil {
@@ -56,11 +85,20 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func loginHandler(w http.ResponseWriter, r *http.Request) {
+	var warning string
 	if r.Method == "POST" {
 		username := r.FormValue("username")
 		password := r.FormValue("password")
 
-		if storedPassword, exists := users[username]; exists && storedPassword == password {
+		// Check credentials in DB
+		var storedPassword string
+		err := db.QueryRow("SELECT password FROM users WHERE username = ?", username).Scan(&storedPassword)
+		if err == sql.ErrNoRows || storedPassword != password {
+			warning = "Invalid username or password. Please try again."
+		} else if err != nil {
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		} else {
 			http.SetCookie(w, &http.Cookie{
 				Name:  "username",
 				Value: username,
@@ -68,12 +106,9 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
-
-		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
-		return
 	}
 
-	data := PageData{Template: "login"}
+	data := PageData{Template: "login", Warning: warning}
 	err := templates.ExecuteTemplate(w, "base.html", data)
 
 	if err != nil {
@@ -96,7 +131,12 @@ func createSessionHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		sessions[sessionID] = cookie.Value
+		// Insert session into DB
+		_, err = db.Exec("INSERT OR REPLACE INTO sessions(session_id, username) VALUES (?, ?)", sessionID, cookie.Value)
+		if err != nil {
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}

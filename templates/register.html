@@ -3,6 +3,9 @@
 {{define "register-content"}}
 <div class="auth-container">
     <h2>Register</h2>
+    {{if .Warning}}
+    <div class="warning" style="color: red; margin-bottom: 10px;">{{.Warning}}</div>
+    {{end}}
     <form method="POST">
         <label>
             <input type="text" name="username" placeholder="Username" required>

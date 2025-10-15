@@ -1,18 +1,41 @@
 package main
 
 import (
+	"database/sql"
 	"html/template"
 	"log"
 	"net/http"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
-var sessions = make(map[string]string)
-var users = make(map[string]string)
+var db *sql.DB
 var templates *template.Template
 
 func main() {
-	// Загружаем шаблоны
+	// Open SQLite database
 	var err error
+	db, err = sql.Open("sqlite3", "cocode.db")
+	if err != nil {
+		log.Fatal("Error opening database:", err)
+	}
+	// Create tables if not exist
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS users (
+			username TEXT PRIMARY KEY,
+			password TEXT NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS sessions (
+			session_id TEXT PRIMARY KEY,
+			username TEXT NOT NULL,
+			FOREIGN KEY(username) REFERENCES users(username)
+		);
+	`)
+	if err != nil {
+		log.Fatal("Error creating tables:", err)
+	}
+
+	// Загружаем шаблоны
 	templates, err = template.ParseGlob("templates/*.html")
 	if err != nil {
 		log.Fatal("Error loading templates:", err)
