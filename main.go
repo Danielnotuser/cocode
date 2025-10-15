@@ -12,6 +12,7 @@ import (
 var sessions = make(map[string]Session)
 var users = make(map[string]string)
 var templates *template.Template
+var db *sql.DB
 
 func main() {
 	var err error
@@ -21,14 +22,17 @@ func main() {
 	}
 	// Create tables if not exist
 	_, err = db.Exec(`
-		   CREATE TABLE IF NOT EXISTS users (
-			   username TEXT PRIMARY KEY,
-			   password_hash TEXT NOT NULL
-		   );
+		CREATE TABLE IF NOT EXISTS users (
+			user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT UNIQUE NOT NULL,
+			password_hash TEXT NOT NULL
+		);
 		CREATE TABLE IF NOT EXISTS sessions (
 			session_id TEXT PRIMARY KEY,
-			username TEXT NOT NULL,
-			FOREIGN KEY(username) REFERENCES users(username)
+			user_id INTEGER NOT NULL,
+			language TEXT,
+			project_name TEXT,
+			FOREIGN KEY(user_id) REFERENCES users(user_id)
 		);
 	`)
 	if err != nil {
