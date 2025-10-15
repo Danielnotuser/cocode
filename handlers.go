@@ -50,7 +50,7 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	username := claims["username"].(string)
 
 	// Get sessions from db (join users for username)
-	rows, err := db.Query(`SELECT s.session_id, u.username, s.language, s.project_name FROM sessions s JOIN users u ON s.user_id = u.user_id WHERE `)
+	rows, err := db.Query(`SELECT s.session_id, u.username, s.language, s.project_name FROM sessions s JOIN users u ON s.user_id = u.user_id`)
 	if err != nil {
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return

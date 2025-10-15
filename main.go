@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -16,7 +17,11 @@ var db *sql.DB
 
 func main() {
 	var err error
-	db, err = sql.Open("sqlite3", "cocode.db")
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "cocode.db"
+	}
+	db, err = sql.Open("sqlite3", dbPath)
 	if err != nil {
 		log.Fatal("Error opening database:", err)
 	}
