@@ -26,6 +26,7 @@ func main() {
 		log.Fatal("Error opening database:", err)
 	}
 	// Create tables if not exist
+	// use varchar no text
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS users (
 			user_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,10 +35,17 @@ func main() {
 		);
 		CREATE TABLE IF NOT EXISTS sessions (
 			session_id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER NOT NULL,
+			owner_id INTEGER NOT NULL,
 			language TEXT,
 			project_name TEXT,
-			FOREIGN KEY(user_id) REFERENCES users(user_id)
+			FOREIGN KEY(owner_id) REFERENCES users(user_id)
+		);
+		CREATE TABLE IF NOT EXISTS collabs (
+			session_id INTEGER NOT NULL,
+			user_id INTEGER NOT NULL,
+			PRIMARY KEY (session_id, user_id),
+			FOREIGN KEY(user_id) REFERENCES users(user_id),
+			FOREIGN KEY(session_id) REFERENCES sessions(session_id)
 		);
 	`)
 	if err != nil {
@@ -54,6 +62,7 @@ func main() {
 	http.HandleFunc("/register", registerHandler)
 	http.HandleFunc("/login", loginHandler)
 	http.HandleFunc("/create-session", createSessionHandler)
+	http.HandleFunc("/add-collab", addCollabHandler)
 	http.HandleFunc("/editor", editorHandler)
 	http.HandleFunc("/delete-session", deleteSessionHandler)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
