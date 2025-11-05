@@ -29,28 +29,56 @@
         <h3>Active Sessions</h3>
         {{if .Sessions}}
         {{range $id, $session := .Sessions}}
-        <div class="session-item">
-            <a href="/editor?session_id={{$id}}" class="session-item-link"></a>
-            <div class="session-header">
-                <a href="/editor?session_id={{$id}}" class="session-project-link">
-                    {{$session.ProjectName}}
-                </a>
-                {{if eq $session.Owner $.Username}}
-                <form action="/delete-session?session_id={{$id}}" method="POST" class="delete-form">
-                    <button type="submit" class="btn-delete">Delete</button>
-                </form>
-                {{end}}
+        <a href="/editor?session_id={{$id}}" class="session-item-link">
+            <div class="session-item">
+                <div class="session-header">
+                    <div class="session-project">
+                        {{$session.ProjectName}}
+                        {{if ne $session.Owner $.Username}}
+                        <span class="shared-badge">Shared by {{$session.Owner}}</span>
+                        {{end}}
+                    </div>
+                    {{if eq $session.Owner $.Username}}
+                    <form action="/delete-session?session_id={{$id}}" method="POST" class="delete-form">
+                        <button type="submit" class="btn-delete">Delete</button>
+                    </form>
+                    {{end}}
+                </div>
+                <div class="session-details">
+                    <span><strong>Language:</strong> {{$session.Language}}</span>
+                    <span><strong>Session ID:</strong> {{$id}}</span>
+                    <span><strong>Owner:</strong> {{$session.Owner}}</span>
+                </div>
             </div>
-            <div class="session-details">
-                <span><strong>Language:</strong> {{$session.Language}}</span>
-                <span><strong>Session ID:</strong> {{$id}}</span>
-                <span><strong>Owner:</strong> {{$session.Owner}}</span>
-            </div>
-        </div>
+        </a>
         {{end}}
         {{else}}
         <p>No active sessions</p>
         {{end}}
     </div>
 </div>
+
+<script>
+    // Prevent form submission from triggering link navigation
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.delete-form').forEach(function(form) {
+            form.addEventListener('click', function(e) {
+                e.stopPropagation();
+                e.preventDefault();
+
+                // Confirm deletion
+                if (confirm('Are you sure you want to delete this session?')) {
+                    form.submit();
+                }
+            });
+        });
+
+        // Make sure the delete button clicks don't trigger the link
+        document.querySelectorAll('.btn-delete').forEach(function(button) {
+            button.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+        });
+    });
+</script>
 {{end}}
