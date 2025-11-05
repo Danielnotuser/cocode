@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -25,6 +26,21 @@ type Session struct {
 	Owner       string
 	Language    string
 	ProjectName string
+	Content     string
+}
+
+// Add this new struct for API responses
+type SaveResponse struct {
+	Success bool   `json:"success"`
+	Error   string `json:"error,omitempty"`
+}
+
+// WebSocket message structure
+type WSMessage struct {
+	Type      string `json:"type"`
+	Content   string `json:"content"`
+	Username  string `json:"username"`
+	SessionID string `json:"session_id"`
 }
 
 func authFromJwt(r *http.Request) (string, error) {
@@ -77,9 +93,10 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	sessionObjs := make(map[string]Session)
 	for rows.Next() {
-		var sid, uname, lang, proj string
+		var sid int
+		var uname, lang, proj string
 		if err := rows.Scan(&sid, &uname, &lang, &proj); err == nil {
-			sessionObjs[sid] = Session{Owner: uname, Language: lang, ProjectName: proj}
+			sessionObjs[strconv.Itoa(sid)] = Session{SessionID: sid, Owner: uname, Language: lang, ProjectName: proj}
 		}
 	}
 	data := PageData{
@@ -100,31 +117,39 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		username := r.FormValue("username")
 		password := r.FormValue("password")
+		confirmPassword := r.FormValue("confirm_password")
 
-		// Check if user exists
-		var exists int
-		err := db.QueryRow("SELECT COUNT(*) FROM users WHERE username = ?", username).Scan(&exists)
-		if err != nil {
-			http.Error(w, "DB error", http.StatusInternalServerError)
-			return
-		}
-		if exists > 0 {
-			warning = "User already exists. Please choose another username."
+		// Check if passwords match
+		if password != confirmPassword {
+			warning = "Passwords do not match."
+		} else if len(password) < 6 {
+			warning = "Password must be at least 6 characters long."
 		} else {
-			// Hash password
-			hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-			if err != nil {
-				http.Error(w, "Error hashing password", http.StatusInternalServerError)
-				return
-			}
-			// Insert user with hash
-			_, err = db.Exec("INSERT INTO users(username, password_hash) VALUES (?, ?)", username, string(hash))
+			// Check if user exists
+			var exists int
+			err := db.QueryRow("SELECT COUNT(*) FROM users WHERE username = ?", username).Scan(&exists)
 			if err != nil {
 				http.Error(w, "DB error", http.StatusInternalServerError)
 				return
 			}
-			http.Redirect(w, r, "/login", http.StatusSeeOther)
-			return
+			if exists > 0 {
+				warning = "User already exists. Please choose another username."
+			} else {
+				// Hash password
+				hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+				if err != nil {
+					http.Error(w, "Error hashing password", http.StatusInternalServerError)
+					return
+				}
+				// Insert user with hash
+				_, err = db.Exec("INSERT INTO users(username, password_hash) VALUES (?, ?)", username, string(hash))
+				if err != nil {
+					http.Error(w, "DB error", http.StatusInternalServerError)
+					return
+				}
+				http.Redirect(w, r, "/login", http.StatusSeeOther)
+				return
+			}
 		}
 	}
 
@@ -219,7 +244,7 @@ func createSessionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Insert session into DB
-	_, err = db.Exec("INSERT OR REPLACE INTO sessions(owner_id, language, project_name) VALUES (?, ?, ?)", userID, language, projectName)
+	_, err = db.Exec("INSERT INTO sessions(owner_id, language, project_name, content) VALUES (?, ?, ?, ?)", userID, language, projectName, "// Start coding here...")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -227,6 +252,79 @@ func createSessionHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// Add this new handler for saving session content
+func saveSessionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Auth via JWT
+	username, err := authFromJwt(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	sessionID := r.FormValue("session_id")
+	content := r.FormValue("content")
+
+	if sessionID == "" {
+		http.Error(w, "Session ID required", http.StatusBadRequest)
+		return
+	}
+
+	// Parse session ID
+	sessionIDInt, err := strconv.Atoi(sessionID)
+	if err != nil {
+		http.Error(w, "Invalid session ID", http.StatusBadRequest)
+		return
+	}
+
+	// Verify user has access to this session (owner OR collaborator)
+	var owner string
+	var ownerID int
+	err = db.QueryRow(`SELECT u.username, s.owner_id FROM sessions s 
+		JOIN users u ON s.owner_id = u.user_id 
+		WHERE s.session_id = ?`, sessionIDInt).Scan(&owner, &ownerID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if user is owner
+	if owner != username {
+		// If not owner, check if user is collaborator
+		var collaboratorCount int
+		err = db.QueryRow(`SELECT COUNT(*) FROM collabs c 
+			JOIN users u ON c.user_id = u.user_id 
+			WHERE c.session_id = ? AND u.username = ?`, sessionIDInt, username).Scan(&collaboratorCount)
+		if err != nil {
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+		if collaboratorCount == 0 {
+			http.Error(w, "Access denied", http.StatusForbidden)
+			return
+		}
+	}
+
+	// Update session content in database
+	_, err = db.Exec("UPDATE sessions SET content = ? WHERE session_id = ?", content, sessionIDInt)
+	if err != nil {
+		http.Error(w, "Error saving content", http.StatusInternalServerError)
+		return
+	}
+
+	// Return success response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(SaveResponse{Success: true})
+}
+
+// Update the editorHandler to properly handle content
 func editorHandler(w http.ResponseWriter, r *http.Request) {
 	// Auth via JWT
 	username, err := authFromJwt(r)
@@ -240,9 +338,17 @@ func editorHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Session ID required", http.StatusBadRequest)
 		return
 	}
+
+	// Parse session ID for security check
+	sessionIDInt, err := strconv.Atoi(sessionID)
+	if err != nil {
+		http.Error(w, "Invalid session ID", http.StatusBadRequest)
+		return
+	}
+
 	// Get session from DB (join users for username)
-	var owner, lang, proj string
-	err = db.QueryRow(`SELECT u.username, s.language, s.project_name FROM sessions s JOIN users u ON s.owner_id = u.user_id WHERE s.session_id = ?`, sessionID).Scan(&owner, &lang, &proj)
+	var owner, lang, proj, content string
+	err = db.QueryRow(`SELECT u.username, s.language, s.project_name, s.content FROM sessions s JOIN users u ON s.owner_id = u.user_id WHERE s.session_id = ?`, sessionIDInt).Scan(&owner, &lang, &proj, &content)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
@@ -250,14 +356,24 @@ func editorHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "DB error", http.StatusInternalServerError)
 		return
 	}
+
+	// Check if user has access (owner or collaborator)
 	if owner != username {
-		err = db.QueryRow(`SELECT c.user_id FROM collabs c JOIN users u ON c.user_id = u.user_id WHERE c.session_id = ? AND u.username = ?`, sessionID, username).Err()
-		if err == sql.ErrNoRows {
+		var collaboratorCount int
+		err = db.QueryRow(`SELECT COUNT(*) FROM collabs c 
+			JOIN users u ON c.user_id = u.user_id 
+			WHERE c.session_id = ? AND u.username = ?`, sessionIDInt, username).Scan(&collaboratorCount)
+		if err != nil {
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+		if collaboratorCount == 0 {
 			http.Error(w, "Access denied", http.StatusForbidden)
 			return
 		}
 	}
-	session := Session{Owner: owner, Language: lang, ProjectName: proj}
+
+	session := Session{Owner: owner, Language: lang, ProjectName: proj, Content: content}
 	data := struct {
 		Username  string
 		SessionID string
@@ -320,6 +436,10 @@ func addCollabHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// Auth via JWT
 	ownerUsername, err := authFromJwt(r)
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
 
 	sessionIDStr := r.FormValue("session_id")
 	collabUsername := r.FormValue("username")

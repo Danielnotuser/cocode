@@ -6,15 +6,37 @@
     {{if .Warning}}
     <div class="warning" style="color: red; margin-bottom: 10px;">{{.Warning}}</div>
     {{end}}
-    <form method="POST">
+    <form method="POST" onsubmit="return validatePassword()">
         <label>
             <input type="text" name="username" placeholder="Username" required>
         </label>
         <label>
-            <input type="password" name="password" placeholder="Password" required>
+            <input type="password" name="password" id="password" placeholder="Password" required>
+        </label>
+        <label>
+            <input type="password" name="confirm_password" id="confirm_password" placeholder="Confirm Password" required>
         </label>
         <button type="submit">Register</button>
     </form>
     <p>Already have an account? <a href="/login">Login here</a></p>
 </div>
+
+<script>
+    function validatePassword() {
+        var password = document.getElementById("password").value;
+        var confirmPassword = document.getElementById("confirm_password").value;
+
+        if (password !== confirmPassword) {
+            alert("Passwords do not match!");
+            return false;
+        }
+
+        if (password.length < 6) {
+            alert("Password must be at least 6 characters long!");
+            return false;
+        }
+
+        return true;
+    }
+</script>
 {{end}}

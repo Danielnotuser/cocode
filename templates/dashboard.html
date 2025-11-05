@@ -30,6 +30,7 @@
         {{if .Sessions}}
         {{range $id, $session := .Sessions}}
         <div class="session-item">
+            <a href="/editor?session_id={{$id}}" class="session-item-link"></a>
             <div class="session-header">
                 <a href="/editor?session_id={{$id}}" class="session-project-link">
                     {{$session.ProjectName}}

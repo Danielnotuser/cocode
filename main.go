@@ -10,8 +10,6 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// var sessions = make(map[string]Session)
-// var users = make(map[string]string)
 var templates *template.Template
 var db *sql.DB
 
@@ -25,8 +23,8 @@ func main() {
 	if err != nil {
 		log.Fatal("Error opening database:", err)
 	}
+
 	// Create tables if not exist
-	// use varchar no text
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS users (
 			user_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,6 +36,7 @@ func main() {
 			owner_id INTEGER NOT NULL,
 			language TEXT,
 			project_name TEXT,
+			content TEXT DEFAULT '',
 			FOREIGN KEY(owner_id) REFERENCES users(user_id)
 		);
 		CREATE TABLE IF NOT EXISTS collabs (
@@ -65,6 +64,8 @@ func main() {
 	http.HandleFunc("/add-collab", addCollabHandler)
 	http.HandleFunc("/editor", editorHandler)
 	http.HandleFunc("/delete-session", deleteSessionHandler)
+	http.HandleFunc("/save-session", saveSessionHandler) // Добавляем новый обработчик
+	http.HandleFunc("/ws", serveWs)                      // Добавляем WebSocket endpoint
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
 	log.Println("Server started on http://localhost:8080")
