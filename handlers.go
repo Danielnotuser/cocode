@@ -3,8 +3,10 @@ package main
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -54,11 +56,24 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Get sessions from db (join users for username)
-	rows, err := db.Query(`SELECT s.session_id, u.username, s.language, s.project_name FROM sessions s JOIN users u ON s.user_id = u.user_id`)
+	rows, err := db.Query(`SELECT 
+								s.session_id,
+								u.username AS owner_username,
+								s.language,
+								s.project_name
+							FROM sessions s
+							JOIN users u ON s.owner_id = u.user_id
+							WHERE u.username = ?
+							OR s.session_id IN (
+									SELECT c.session_id
+									FROM collabs c
+									JOIN users cu ON c.user_id = cu.user_id
+									WHERE cu.username = ?);`, username, username)
 	if err != nil {
-		http.Error(w, "DB error", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
 	defer rows.Close()
 	sessionObjs := make(map[string]Session)
 	for rows.Next() {
@@ -204,9 +219,9 @@ func createSessionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Insert session into DB
-	_, err = db.Exec("INSERT OR REPLACE INTO sessions(user_id, language, project_name) VALUES (?, ?, ?)", userID, language, projectName)
+	_, err = db.Exec("INSERT OR REPLACE INTO sessions(owner_id, language, project_name) VALUES (?, ?, ?)", userID, language, projectName)
 	if err != nil {
-		http.Error(w, "DB error", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -227,7 +242,7 @@ func editorHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	// Get session from DB (join users for username)
 	var owner, lang, proj string
-	err = db.QueryRow(`SELECT u.username, s.language, s.project_name FROM sessions s JOIN users u ON s.user_id = u.user_id WHERE s.session_id = ?`, sessionID).Scan(&owner, &lang, &proj)
+	err = db.QueryRow(`SELECT u.username, s.language, s.project_name FROM sessions s JOIN users u ON s.owner_id = u.user_id WHERE s.session_id = ?`, sessionID).Scan(&owner, &lang, &proj)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
@@ -236,8 +251,11 @@ func editorHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if owner != username {
-		http.Error(w, "Access denied", http.StatusForbidden)
-		return
+		err = db.QueryRow(`SELECT c.user_id FROM collabs c JOIN users u ON c.user_id = u.user_id WHERE c.session_id = ? AND u.username = ?`, sessionID, username).Err()
+		if err == sql.ErrNoRows {
+			http.Error(w, "Access denied", http.StatusForbidden)
+			return
+		}
 	}
 	session := Session{Owner: owner, Language: lang, ProjectName: proj}
 	data := struct {
@@ -271,7 +289,7 @@ func deleteSessionHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	sessionID := r.URL.Query().Get("session_id")
 	var dbUserID int
-	err = db.QueryRow(`SELECT s.user_id FROM sessions s WHERE s.session_id = ?`, sessionID).Scan(&dbUserID)
+	err = db.QueryRow(`SELECT s.owner_id FROM sessions s WHERE s.session_id = ?`, sessionID).Scan(&dbUserID)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "Session not found or access denied", http.StatusForbidden)
 		return
@@ -293,4 +311,65 @@ func deleteSessionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func addCollabHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// Auth via JWT
+	ownerUsername, err := authFromJwt(r)
+
+	sessionIDStr := r.FormValue("session_id")
+	collabUsername := r.FormValue("username")
+	if sessionIDStr == "" || collabUsername == "" {
+		http.Error(w, "session_id and username required", http.StatusBadRequest)
+		return
+	}
+	// parse session id
+	sessionID, err := strconv.ParseInt(sessionIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid session_id", http.StatusBadRequest)
+		return
+	}
+	// Verify owner: get user_id of session
+	var ownerUserID int
+	err = db.QueryRow("SELECT owner_id FROM sessions WHERE session_id = ?", sessionID).Scan(&ownerUserID)
+	if err == sql.ErrNoRows {
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+	// get owner username to compare
+	var dbOwnerUsername string
+	err = db.QueryRow("SELECT username FROM users WHERE user_id = ?", ownerUserID).Scan(&dbOwnerUsername)
+	if err != nil {
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+	if dbOwnerUsername != ownerUsername {
+		http.Error(w, "Access denied", http.StatusForbidden)
+		return
+	}
+	// find collaborator user_id
+	var collabUserID int
+	err = db.QueryRow("SELECT user_id FROM users WHERE username = ?", collabUsername).Scan(&collabUserID)
+	if err == sql.ErrNoRows {
+		http.Error(w, "User not found", http.StatusBadRequest)
+		return
+	} else if err != nil {
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+	// insert into collabs (ignore duplicates)
+	_, err = db.Exec("INSERT OR IGNORE INTO collabs(session_id, user_id) VALUES (?, ?)", sessionID, collabUserID)
+	if err != nil {
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+	// Redirect back to editor
+	http.Redirect(w, r, fmt.Sprintf("/editor?session_id=%d", sessionID), http.StatusSeeOther)
 }

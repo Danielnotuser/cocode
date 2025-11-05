@@ -11,6 +11,16 @@
         </div>
     </div>
 
+    {{if eq .Session.Owner .Username}}
+    <div class="collab-submenu" style="background: #fff; padding: 0.75rem; border-radius: 6px; margin-bottom: 1rem;">
+        <form action="/add-collab" method="POST" style="display:flex; gap:0.5rem; align-items:center;">
+            <input type="hidden" name="session_id" value="{{.SessionID}}">
+            <input type="text" name="username" placeholder="Add collaborator by username" required style="flex:1; padding:0.5rem;">
+            <button type="submit" style="padding:0.5rem 1rem; background:#3498db; color:#fff; border:none; border-radius:4px;">Add</button>
+        </form>
+    </div>
+    {{end}}
+
     <div class="editor-area">
         <label>
             <textarea class="code-editor" placeholder="Start writing your code here..."></textarea>
