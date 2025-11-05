@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -118,6 +120,26 @@ func (c *Client) readPump() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			break
+		}
+
+		// Обрабатываем сообщение и сохраняем в базу
+		var msg map[string]interface{}
+		if err := json.Unmarshal(message, &msg); err == nil {
+			if msg["type"] == "code_update" {
+				// Сохраняем изменения в базу
+				sessionID := msg["session_id"].(string)
+				content := msg["content"].(string)
+				username := msg["username"].(string)
+
+				// Парсим session ID
+				sessionIDInt, err := strconv.Atoi(sessionID)
+				if err == nil {
+					// Сохраняем в базу
+					if err := saveSessionContent(sessionIDInt, content, username); err != nil {
+						log.Println("Error saving content from WebSocket:", err)
+					}
+				}
+			}
 		}
 
 		// Рассылаем сообщение всем в сессии

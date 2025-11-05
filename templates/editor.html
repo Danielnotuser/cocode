@@ -11,7 +11,6 @@
             {{if ne .Session.Owner .Username}}
             <span style="color: #666;">(You are a collaborator)</span>
             {{end}}
-            <button id="save-btn" class="save-btn">Save</button>
         </div>
     </div>
 
@@ -71,14 +70,6 @@
                 },
                 "Shift-Tab": function(cm) {
                     cm.indentSelection("subtract");
-                },
-                "Ctrl-S": function(cm) {
-                    saveCode();
-                    return false; // Prevent default
-                },
-                "Cmd-S": function(cm) {
-                    saveCode();
-                    return false; // Prevent default
                 }
             }
         });
@@ -105,12 +96,10 @@
 
         ws.onclose = function() {
             console.log("WebSocket disconnected");
-            showMessage('Disconnected from real-time collaboration', 'error');
         };
 
         ws.onerror = function(error) {
             console.error("WebSocket error:", error);
-            showMessage('WebSocket connection error', 'error');
         };
 
         // Send code updates on change with debouncing
@@ -155,12 +144,6 @@
                 editor.setSize(width, height);
             }
         });
-
-        // Save button functionality
-        document.getElementById('save-btn').addEventListener('click', saveCode);
-
-        // Auto-save every 30 seconds
-        setInterval(saveCode, 30000);
 
         // Save before leaving page
         window.addEventListener('beforeunload', function(e) {

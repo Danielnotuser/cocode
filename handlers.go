@@ -252,6 +252,39 @@ func createSessionHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+func saveSessionContent(sessionIDInt int, content string, username string) error {
+	// Verify user has access to this session (owner OR collaborator)
+	var owner string
+	var ownerID int
+	err := db.QueryRow(`SELECT u.username, s.owner_id FROM sessions s 
+		JOIN users u ON s.owner_id = u.user_id 
+		WHERE s.session_id = ?`, sessionIDInt).Scan(&owner, &ownerID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return errors.New("session not found")
+	} else if err != nil {
+		return err
+	}
+
+	// Check if user is owner
+	if owner != username {
+		// If not owner, check if user is collaborator
+		var collaboratorCount int
+		err = db.QueryRow(`SELECT COUNT(*) FROM collabs c 
+			JOIN users u ON c.user_id = u.user_id 
+			WHERE c.session_id = ? AND u.username = ?`, sessionIDInt, username).Scan(&collaboratorCount)
+		if err != nil {
+			return err
+		}
+		if collaboratorCount == 0 {
+			return errors.New("access denied")
+		}
+	}
+
+	// Update session content in database
+	_, err = db.Exec("UPDATE sessions SET content = ? WHERE session_id = ?", content, sessionIDInt)
+	return err
+}
+
 // Add this new handler for saving session content
 func saveSessionHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -281,41 +314,10 @@ func saveSessionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify user has access to this session (owner OR collaborator)
-	var owner string
-	var ownerID int
-	err = db.QueryRow(`SELECT u.username, s.owner_id FROM sessions s 
-		JOIN users u ON s.owner_id = u.user_id 
-		WHERE s.session_id = ?`, sessionIDInt).Scan(&owner, &ownerID)
-	if errors.Is(err, sql.ErrNoRows) {
-		http.Error(w, "Session not found", http.StatusNotFound)
-		return
-	} else if err != nil {
-		http.Error(w, "DB error", http.StatusInternalServerError)
-		return
-	}
-
-	// Check if user is owner
-	if owner != username {
-		// If not owner, check if user is collaborator
-		var collaboratorCount int
-		err = db.QueryRow(`SELECT COUNT(*) FROM collabs c 
-			JOIN users u ON c.user_id = u.user_id 
-			WHERE c.session_id = ? AND u.username = ?`, sessionIDInt, username).Scan(&collaboratorCount)
-		if err != nil {
-			http.Error(w, "DB error", http.StatusInternalServerError)
-			return
-		}
-		if collaboratorCount == 0 {
-			http.Error(w, "Access denied", http.StatusForbidden)
-			return
-		}
-	}
-
-	// Update session content in database
-	_, err = db.Exec("UPDATE sessions SET content = ? WHERE session_id = ?", content, sessionIDInt)
+	// Сохраняем контент
+	err = saveSessionContent(sessionIDInt, content, username)
 	if err != nil {
-		http.Error(w, "Error saving content", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
