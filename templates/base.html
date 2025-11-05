@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Live Editor</title>
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/eclipse.min.css">
 </head>
 <body>
 <nav>
@@ -24,19 +26,27 @@
 <main>
     {{if .Username}}
     <!-- Для авторизованных пользователей (dashboard) -->
-        {{if eq .Template "dashboard"}}
-            {{template "dashboard-content" .}}
-        {{else if eq .Template "editor"}}
-            {{template "editor-content" .}}
-        {{end}}
+    {{if eq .Template "dashboard"}}
+    {{template "dashboard-content" .}}
+    {{else if eq .Template "editor"}}
+    {{template "editor-content" .}}
+    {{end}}
     {{else}}
     <!-- Для неавторизованных пользователей -->
-        {{if eq .Template "login"}}
-            {{template "login-content" .}}
-        {{else if eq .Template "register"}}
-            {{template "register-content" .}}
-        {{end}}
+    {{if eq .Template "login"}}
+    {{template "login-content" .}}
+    {{else if eq .Template "register"}}
+    {{template "register-content" .}}
+    {{end}}
     {{end}}
 </main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/go/go.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
 </body>
 </html>
