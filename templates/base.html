@@ -42,14 +42,6 @@
     {{end}}
 </main>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/javascript/javascript.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/go/go.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/python/python.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
-
 <!-- Global error popup and AJAX form handler -->
 <div id="global-popup" style="display:none; position:fixed; z-index:10000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.4);">
   <div style="background:#fff; padding:20px; max-width:560px; margin:10% auto; border-radius:6px; box-shadow:0 6px 18px rgba(0,0,0,0.2);">
@@ -100,7 +92,7 @@
           window.location.href = redirect;
         } else {
           console.log('[AJAX] Success, reloading page');
-          window.location.reload();
+          // window.location.reload();
         }
       } else if (resp.status >= 400 && resp.status < 500) {
         // Client error (4xx): read body and show popup, stay on page

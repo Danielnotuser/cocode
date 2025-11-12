@@ -386,3 +386,59 @@ select {
 #code-editor {
     display: none;
 }
+
+/* Стили для CodeMirror 6 */
+#editor {
+    height: 100%;
+    flex: 1;
+    border: 1px solid #ddd;
+}
+
+.cm-editor {
+    height: 100%;
+    font-size: 14px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.cm-scroller {
+    overflow: auto;
+    height: 100%;
+}
+
+.cm-content {
+    padding: 10px 0;
+}
+
+.cm-line {
+    padding: 0 10px;
+}
+
+.cm-gutters {
+    background-color: #f8f9fa;
+    border-right: 1px solid #ddd;
+}
+
+/* Стили для курсоров других пользователей */
+.cm-ySelectionInfo {
+    position: absolute;
+    top: -1.05em;
+    left: -1px;
+    padding: 2px 6px;
+    color: white;
+    border-radius: 4px;
+    font-size: 12px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-weight: normal;
+    pointer-events: none;
+    user-select: none;
+    white-space: nowrap;
+}
+
+/* Улучшенные стили для редактора */
+.cm-focused {
+    outline: none;
+}
+
+.cm-lineNumbers {
+    min-width: 40px;
+}

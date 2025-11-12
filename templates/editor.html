@@ -25,216 +25,145 @@
     {{end}}
 
     <div class="editor-area">
-        <textarea id="code-editor">{{.Session.Content}}</textarea>
+        <div id="editor"></div>
     </div>
 </div>
 
-<script>
-    // Function to get CodeMirror mode based on language
-    function getCodeMirrorMode(language) {
-        var modes = {
-            "JavaScript": "javascript",
-            "Golang": "go",
-            "Python": "python",
-            "Java": "text/x-java",
-            "HTML": "htmlmixed",
-            "CSS": "css"
-        };
-        return modes[language] || "javascript";
+<!-- Подключаем Yjs через CDN -->
+<script src="https://cdn.jsdelivr.net/npm/yjs@1.4.0/dist/yjs.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/y-websocket@1.4.5/bin/y-websocket.js"></script>
+
+<script type="module">
+    // Импортируем CodeMirror 6 через CDN
+    import { EditorView, basicSetup } from 'https://esm.sh/@codemirror/view@6.0.0';
+    import { EditorState } from 'https://esm.sh/@codemirror/state@6.0.0';
+    import { javascript } from 'https://esm.sh/@codemirror/lang-javascript@6.0.0';
+    import { python } from 'https://esm.sh/@codemirror/lang-python@6.0.0';
+    import { go } from 'https://esm.sh/@codemirror/lang-go@6.0.0';
+    import { java } from 'https://esm.sh/@codemirror/lang-java@6.0.0';
+    import { html } from 'https://esm.sh/@codemirror/lang-html@6.0.0';
+    import { css } from 'https://esm.sh/@codemirror/lang-css@6.0.0';
+    import { yCollab } from 'https://esm.sh/y-codemirror.next@1.0.2';
+
+    // Конфигурация
+    const sessionId = '{{.SessionID}}';
+    const username = '{{.Username}}';
+    const initialContent = `{{.Session.Content}}`;
+
+    // Инициализация Yjs
+    const ydoc = new Y.Doc();
+
+    // Подключаемся к WebSocket серверу Yjs
+    const provider = new Y.WebsocketProvider(
+        'ws://localhost:1234',
+        'cocode-session-' + sessionId,
+        ydoc
+    );
+
+    const ytext = ydoc.getText('codemirror');
+    const undoManager = new Y.UndoManager(ytext);
+
+    // Генерируем цвет для пользователя
+    function generateUserColor(username) {
+        const colors = [
+            '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+            '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9'
+        ];
+        let hash = 0;
+        for (let i = 0; i < username.length; i++) {
+            hash = username.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        return colors[Math.abs(hash) % colors.length];
     }
 
-    // Initialize CodeMirror after page load
-    document.addEventListener('DOMContentLoaded', function() {
-        var language = "{{.Session.Language}}";
-        var mode = getCodeMirrorMode(language);
-        var sessionId = "{{.SessionID}}";
-        var username = "{{.Username}}";
+    // Настройка awareness (курсоры других пользователей)
+    provider.awareness.setLocalStateField('user', {
+        name: username,
+        color: generateUserColor(username)
+    });
 
-        var editor = CodeMirror.fromTextArea(document.getElementById('code-editor'), {
-            lineNumbers: true,
-            mode: mode,
-            theme: "default",
-            indentUnit: 4,
-            smartIndent: true,
-            matchBrackets: true,
-            autoCloseBrackets: true,
-            lineWrapping: true,
-            viewportMargin: Infinity,
-            extraKeys: {
-                "Tab": function(cm) {
-                    if (cm.somethingSelected()) {
-                        cm.indentSelection("add");
-                    } else {
-                        cm.replaceSelection("    ", "end");
-                    }
-                },
-                "Shift-Tab": function(cm) {
-                    cm.indentSelection("subtract");
-                }
-            }
-        });
+    // Выбираем язык программирования
+    function getLanguageExtension() {
+        const lang = '{{.Session.Language}}'.toLowerCase();
+        switch(lang) {
+            case 'javascript': return javascript();
+            case 'python': return python();
+            case 'go': return go();
+            case 'java': return java();
+            case 'html': return html();
+            case 'css': return css();
+            default: return javascript();
+        }
+    }
 
-        // WebSocket connection for real-time collaboration
-        var ws = new WebSocket("ws://" + window.location.host + "/ws?session_id=" + sessionId + "&username=" + encodeURIComponent(username));
+    // Инициализация начального контента
+    if (initialContent && initialContent !== '') {
+        ytext.insert(0, initialContent);
+    }
 
-        ws.onopen = function() {
-            console.log("WebSocket connected for real-time collaboration");
-        };
+    // Инициализация редактора
+    const editor = new EditorView({
+        state: EditorState.create({
+            doc: ytext.toString(),
+            extensions: [
+                basicSetup,
+                getLanguageExtension(),
+                yCollab(ytext, provider.awareness, { undoManager })
+            ]
+        }),
+        parent: document.getElementById('editor')
+    });
 
-        ws.onmessage = function(event) {
-            var data = JSON.parse(event.data);
-
-            if (data.type === 'code_update') {
-                // Update editor content if it's different from current
-                var currentContent = editor.getValue();
-                if (currentContent !== data.content && data.username !== username) {
-                    editor.setValue(data.content);
-                    showMessage('Code updated by ' + data.username, 'info');
-                }
-            }
-        };
-
-        ws.onclose = function() {
-            console.log("WebSocket disconnected");
-        };
-
-        ws.onerror = function(error) {
-            console.error("WebSocket error:", error);
-        };
-
-        // Send code updates on change with debouncing
-        var changeTimer;
-        editor.on("change", function(cm, change) {
-            // Ignore changes that come from setValue (remote updates)
-            if (change.origin === 'setValue') return;
-
-            clearTimeout(changeTimer);
-            changeTimer = setTimeout(function() {
-                var content = cm.getValue();
-                var message = {
-                    type: 'code_update',
-                    content: content,
-                    username: username,
-                    session_id: sessionId
-                };
-                ws.send(JSON.stringify(message));
-            }, 300); // 300ms debounce
-        });
-
-        // Set focus to editor
-        editor.focus();
-
-        // Update editor size after initialization
-        setTimeout(function() {
-            // Get the container dimensions
-            var container = document.querySelector('.editor-area');
-            if (container) {
-                var width = container.clientWidth + 'px';
-                var height = container.clientHeight + 'px';
-                editor.setSize(width, height);
-            }
-        }, 0);
-
-        // Update editor size on window resize
-        window.addEventListener('resize', function() {
-            var container = document.querySelector('.editor-area');
-            if (container) {
-                var width = container.clientWidth + 'px';
-                var height = container.clientHeight + 'px';
-                editor.setSize(width, height);
-            }
-        });
-
-        // Save before leaving page
-        window.addEventListener('beforeunload', function(e) {
-            // Only save if there are unsaved changes
-            var originalContent = "{{.Session.Content}}";
-            // Escape special characters for comparison
-            originalContent = originalContent.replace(/\\n/g, '\n').replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-            if (editor.getValue() !== originalContent) {
-                saveCode(true); // Silent save
-            }
-        });
-
-        function saveCode(silent = false) {
-            var code = editor.getValue();
+    // Автосохранение в базу данных при изменениях
+    let saveTimeout;
+    ytext.observe(() => {
+        clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(() => {
+            const content = ytext.toString();
 
             fetch('/save-session', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: 'session_id=' + encodeURIComponent(sessionId) + '&content=' + encodeURIComponent(code)
+                body: 'session_id=' + encodeURIComponent(sessionId) + '&content=' + encodeURIComponent(content)
             })
-                .then(response => {
-                    if (!response.ok) {
-                        return response.text().then(text => {
-                            throw new Error(text);
-                        });
-                    }
-                    return response.json();
-                })
+                .then(response => response.json())
                 .then(data => {
-                    if (!silent) {
-                        if (data.success) {
-                            showMessage('Code saved successfully!', 'success');
-                        } else {
-                            showMessage('Error saving code: ' + data.error, 'error');
-                        }
+                    if (!data.success) {
+                        console.error('Save error:', data.error);
                     }
                 })
                 .catch(error => {
-                    if (!silent) {
-                        showMessage('Error saving code: ' + error.message, 'error');
-                    }
+                    console.error('Save request failed:', error);
                 });
-        }
+        }, 1000); // Сохраняем через 1 секунду после изменения
+    });
 
-        function showMessage(message, type) {
-            // Remove existing messages
-            var existingMessage = document.querySelector('.save-message');
-            if (existingMessage) {
-                existingMessage.remove();
-            }
-
-            // Create new message
-            var messageDiv = document.createElement('div');
-            messageDiv.className = 'save-message ' + type;
-            messageDiv.textContent = message;
-
-            // Add styles
-            messageDiv.style.cssText = `
-                position: fixed;
-                top: 14px;
-                right: 20px;
-                padding: 10px 20px;
-                border-radius: 4px;
-                color: white;
-                font-weight: bold;
-                z-index: 1000;
-                transition: opacity 0.3s;
-            `;
-
-            if (type === 'success') {
-                messageDiv.style.backgroundColor = '#27ae60';
-            } else if (type === 'error') {
-                messageDiv.style.backgroundColor = '#e74c3c';
-            } else if (type === 'info') {
-                messageDiv.style.backgroundColor = '#3498db';
-            }
-
-            document.body.appendChild(messageDiv);
-
-            // Auto remove after 3 seconds
-            setTimeout(function() {
-                messageDiv.style.opacity = '0';
-                setTimeout(function() {
-                    if (messageDiv.parentNode) {
-                        messageDiv.parentNode.removeChild(messageDiv);
-                    }
-                }, 300);
-            }, 3000);
+    // Обработка отключения WebSocket
+    provider.on('status', event => {
+        if (event.status === 'disconnected') {
+            console.log('Disconnected from collaboration server');
+        } else if (event.status === 'connected') {
+            console.log('Connected to collaboration server');
         }
     });
+
+    // Обновление размеров редактора
+    function updateEditorSize() {
+        const container = document.querySelector('.editor-area');
+        if (container && editor) {
+            editor.dispatch({
+                effects: EditorView.domEventHandlers({
+                    resize: () => {
+                        // CodeMirror 6 автоматически обрабатывает ресайз
+                    }
+                })
+            });
+        }
+    }
+
+    window.addEventListener('resize', updateEditorSize);
+    setTimeout(updateEditorSize, 100);
 </script>
 {{end}}
