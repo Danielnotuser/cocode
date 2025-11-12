@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Editor</title>
+    <title>СoCode: Collaborative Coding</title>
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/eclipse.min.css">
@@ -11,14 +11,15 @@
 <body>
 <nav>
     <div class="nav-container">
-        <h1>Live Editor</h1>
+        <h1>СoCode: Collaborative Coding</h1>
         <div class="nav-links">
             {{if .Username}}
             <span>Welcome, {{.Username}}</span>
-            <a href="/">Dashboard</a>
+            <a href="/" class="btn-nav">Dashboard</a>
+            <a href="/logout" class="btn-logout">Logout</a>
             {{else}}
-            <a href="/login">Login</a>
-            <a href="/register">Register</a>
+            <a href="/login" class="btn-nav">Login</a>
+            <a href="/register" class="btn-nav">Register</a>
             {{end}}
         </div>
     </div>

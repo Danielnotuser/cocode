@@ -37,7 +37,7 @@ nav {
     align-items: center;
 }
 
-.nav-links a {
+.btn-nav {
     color: white;
     text-decoration: none;
     padding: 0.5rem 1rem;
@@ -45,8 +45,24 @@ nav {
     transition: background-color 0.3s;
 }
 
-.nav-links a:hover {
+.btn-nav:hover {
     background-color: rgba(255,255,255,0.1);
+}
+
+.btn-logout {
+    padding: 0.5rem 1rem;
+    background: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background-color 0.3s;
+    pointer-events: auto;
+}
+
+.btn-logout:hover {
+    background: #a83225; /* Более темный красный для наведения */
 }
 
 main {
