@@ -16,7 +16,7 @@
 
     {{if eq .Session.Owner .Username}}
     <div class="collab-submenu">
-        <form action="/add-collab" method="POST" class="collab-form">
+        <form action="/add-collab" method="POST" class="ajax-form" data-redirect="/editor?session_id={{.SessionID}}">
             <input type="hidden" name="session_id" value="{{.SessionID}}">
             <input type="text" name="username" placeholder="Add collaborator by username" required class="collab-input">
             <button type="submit" class="collab-btn">Add</button>

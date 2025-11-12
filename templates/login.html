@@ -6,7 +6,7 @@
     {{if .Warning}}
     <div class="warning" style="color: red; margin-bottom: 10px;">{{.Warning}}</div>
     {{end}}
-    <form method="POST">
+    <form method="POST" action="/login" class="ajax-form" data-redirect="/">
         <label>
             <input type="text" name="username" placeholder="Username" required>
         </label>

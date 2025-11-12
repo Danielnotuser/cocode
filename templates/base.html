@@ -48,5 +48,81 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/clike/clike.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/htmlmixed/htmlmixed.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/css/css.min.js"></script>
+
+<!-- Global error popup and AJAX form handler -->
+<div id="global-popup" style="display:none; position:fixed; z-index:10000; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.4);">
+  <div style="background:#fff; padding:20px; max-width:560px; margin:10% auto; border-radius:6px; box-shadow:0 6px 18px rgba(0,0,0,0.2);">
+    <h3 style="margin:0 0 8px 0;">Message</h3>
+    <div id="global-popup-message" style="color:#333; white-space:pre-wrap;"></div>
+    <div style="text-align:right; margin-top:12px;"><button id="global-popup-close">Close</button></div>
+  </div>
+</div>
+
+<script>
+  function showPopup(message) {
+    var modal = document.getElementById('global-popup');
+    var msg = document.getElementById('global-popup-message');
+    msg.textContent = message || '';
+    modal.style.display = 'block';
+    document.getElementById('global-popup-close').focus();
+  }
+  document.getElementById && document.getElementById('global-popup-close') && document.getElementById('global-popup-close').addEventListener('click', function(){
+    document.getElementById('global-popup').style.display = 'none';
+  });
+
+  // Intercept forms with class 'ajax-form' and submit via fetch
+  document.addEventListener('submit', function(e) {
+    var form = e.target;
+    if (!form.classList || !form.classList.contains('ajax-form')) return;
+    e.preventDefault();
+    var action = form.getAttribute('action') || window.location.href;
+    var method = (form.getAttribute('method') || 'GET').toUpperCase();
+    var redirect = form.getAttribute('data-redirect');
+
+    var headers = {};
+    // Use FormData for form body
+    var body = new FormData(form);
+
+    console.log('[AJAX] Submitting form:', action, method, 'redirect:', redirect);
+    
+    fetch(action, {
+      method: method,
+      body: body,
+      headers: headers,
+      credentials: 'same-origin'
+    }).then(function(resp) {
+      console.log('[AJAX] Response status:', resp.status);
+      if (resp.ok) {
+        // On success (2xx): if redirect specified, navigate there, otherwise reload
+        if (redirect) {
+          console.log('[AJAX] Success, redirecting to:', redirect);
+          window.location.href = redirect;
+        } else {
+          console.log('[AJAX] Success, reloading page');
+          window.location.reload();
+        }
+      } else if (resp.status >= 400 && resp.status < 500) {
+        // Client error (4xx): read body and show popup, stay on page
+        resp.text().then(function(text) {
+          var msg = text || (resp.status + ' ' + resp.statusText);
+          console.log('[AJAX] 4xx Error message:', msg);
+          showPopup(msg);
+        }).catch(function() {
+          showPopup(resp.status + ' ' + resp.statusText);
+        });
+      } else if (resp.status >= 500) {
+        // Server error (5xx): show popup
+        resp.text().then(function(text) {
+          showPopup(text || (resp.status + ' ' + resp.statusText));
+        }).catch(function() {
+          showPopup(resp.status + ' ' + resp.statusText);
+        });
+      }
+    }).catch(function(err) {
+      console.log('[AJAX] Network error:', err);
+      showPopup('Network error: ' + (err && err.message ? err.message : String(err)));
+    });
+  });
+</script>
 </body>
 </html>
