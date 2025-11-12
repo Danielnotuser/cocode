@@ -60,6 +60,7 @@ func main() {
 	http.HandleFunc("/", dashboardHandler)
 	http.HandleFunc("/register", registerHandler)
 	http.HandleFunc("/login", loginHandler)
+	http.HandleFunc("/logout", logoutHandler)
 	http.HandleFunc("/create-session", createSessionHandler)
 	http.HandleFunc("/add-collab", addCollabHandler)
 	http.HandleFunc("/editor", editorHandler)
