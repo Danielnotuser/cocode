@@ -6,7 +6,7 @@
 
     <div class="create-session">
         <h3>Create New Session</h3>
-        <form action="/create-session" method="POST">
+        <form action="/create-session" method="POST" class="ajax-form" data-redirect="/">
             <label>
                 <input type="text" name="project_name" placeholder="Project Name" required>
             </label>
@@ -39,7 +39,8 @@
                         {{end}}
                     </div>
                     {{if eq $session.Owner $.Username}}
-                    <form action="/delete-session?session_id={{$id}}" method="POST" class="delete-form">
+                    <form action="/delete-session?session_id={{$id}}" method="POST" class="delete-form ajax-form" data-redirect="/">
+                        <input type="hidden" name="session_id" value="{{$id}}">
                         <button type="submit" class="btn-delete">Delete</button>
                     </form>
                     {{end}}
@@ -68,7 +69,9 @@
 
                 // Confirm deletion
                 if (confirm('Are you sure you want to delete this session?')) {
-                    form.submit();
+                    // Dispatch a submit event so our AJAX submit handler picks it up
+                    var submitEvent = new Event('submit', {bubbles: true, cancelable: true});
+                    form.dispatchEvent(submitEvent);
                 }
             });
         });
