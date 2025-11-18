@@ -1,5 +1,5 @@
 # cocode
-Unbelivable "live-coding" project by two ambitious students huyau mephi 
+Unbelivable "live-coding" project by two ambitious students kis kis meow meow niyau 
 
 how to run:
 
