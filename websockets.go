@@ -98,21 +98,6 @@ func (doc *SessionDoc) unregisterClient(client *YjsClient) {
 	}
 }
 
-// broadcastUpdate sends an update to all clients except sender
-func (doc *SessionDoc) broadcastUpdate(update []byte, sender *YjsClient) {
-	doc.mu.RLock()
-	defer doc.mu.RUnlock()
-
-	for client := range doc.clients {
-		if client != sender {
-			select {
-			case client.send <- UpdateMessage{Update: update}:
-			default:
-			}
-		}
-	}
-}
-
 // Handler for WebSocket connections with Yjs protocol
 func serveYjsWs(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Query().Get("session")
@@ -170,7 +155,7 @@ func serveYjsWs(w http.ResponseWriter, r *http.Request) {
 	sessionDoc := yjsHub.getOrCreateSessionDoc(sessionID)
 	sessionDoc.registerClient(client)
 
-	log.Printf("[Yjs] Client connected: %s to session %s\n", username, sessionID)
+	log.Printf("[Yjs] Client connected: %s to session %s (Yjs protocol)\n", username, sessionID)
 
 	go client.readPump(sessionDoc)
 	go client.writePump()
@@ -181,40 +166,76 @@ func (c *YjsClient) readPump(sessionDoc *SessionDoc) {
 		sessionDoc.unregisterClient(c)
 		close(c.done)
 		c.conn.Close()
-		log.Printf("[WebSocket] Client disconnected: %s from session %s\n", c.username, c.sessionID)
+		log.Printf("[Yjs] Client disconnected: %s from session %s\n", c.username, c.sessionID)
 	}()
 
 	for {
-		var msg map[string]interface{}
-		err := c.conn.ReadJSON(&msg)
+		messageType, data, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("[WebSocket] Error: %v\n", err)
+				log.Printf("[Yjs] WebSocket error: %v\n", err)
 			}
 			return
 		}
 
-		// Handle code_update messages from frontend
-		if msgType, ok := msg["type"].(string); ok && msgType == "code_update" {
-			log.Printf("[WebSocket] Code update from %s\n", c.username)
+		if messageType != websocket.BinaryMessage {
+			continue
+		}
 
-			// Broadcast to all other clients in the session
-			broadcastToOthers(sessionDoc, c, msg)
+		// Parse Yjs protocol message
+		if len(data) < 1 {
+			continue
+		}
+
+		msgType := data[0]
+
+		switch msgType {
+		case 0: // Sync Step 1
+			log.Printf("[Yjs] Sync step 1 from %s\n", c.username)
+			// Send back our document state (Sync Step 2)
+			syncStep2 := []byte{1} // Type 1 = Sync Step 2
+			sessionDoc.mu.RLock()
+			for _, update := range sessionDoc.updateBuf {
+				syncStep2 = append(syncStep2, update...)
+			}
+			sessionDoc.mu.RUnlock()
+			c.send <- syncStep2
+
+		case 1: // Sync Step 2
+			log.Printf("[Yjs] Sync step 2 from %s\n", c.username)
+			// Client is syncing, acknowledge
+
+		case 3: // Update (from client)
+			log.Printf("[Yjs] Update from %s\n", c.username)
+			// Store update and broadcast to all other clients
+			sessionDoc.clockMutex.Lock()
+			sessionDoc.clock++
+			sessionDoc.clockMutex.Unlock()
+
+			sessionDoc.mu.Lock()
+			sessionDoc.updateBuf = append(sessionDoc.updateBuf, data[1:])
+			sessionDoc.mu.Unlock()
+
+			// Broadcast update to all other clients
+			broadcastToOthers(sessionDoc, c, data)
+
+		default:
+			log.Printf("[Yjs] Unknown message type: %d from %s\n", msgType, c.username)
 		}
 	}
 }
 
-// broadcastToOthers sends a message to all clients except the sender
-func broadcastToOthers(sessionDoc *SessionDoc, sender *YjsClient, msg map[string]interface{}) {
+// broadcastToOthers sends a binary message to all clients except the sender
+func broadcastToOthers(sessionDoc *SessionDoc, sender *YjsClient, data []byte) {
 	sessionDoc.mu.RLock()
 	defer sessionDoc.mu.RUnlock()
 
 	for client := range sessionDoc.clients {
 		if client != sender {
 			select {
-			case client.send <- msg:
+			case client.send <- data:
 			default:
-				log.Printf("[WebSocket] Client buffer full, dropping message\n")
+				log.Printf("[Yjs] Client buffer full, dropping message\n")
 			}
 		}
 	}
@@ -231,9 +252,12 @@ func (c *YjsClient) writePump() {
 				return
 			}
 
-			err := c.conn.WriteJSON(msg)
-			if err != nil {
-				return
+			// Handle binary data from Yjs
+			if data, ok := msg.([]byte); ok {
+				err := c.conn.WriteMessage(websocket.BinaryMessage, data)
+				if err != nil {
+					return
+				}
 			}
 
 		case <-c.done:

@@ -6,7 +6,9 @@
 import * as Y from 'yjs';
 import { CodemirrorBinding } from 'y-codemirror';
 import { WebsocketProvider } from 'y-websocket';
-import CodeMirror from 'codemirror';
+
+// Use global CodeMirror loaded from CDN (not npm package)
+const CodeMirror = window.CodeMirror;
 
 // Language mode configuration
 const MODE_MAP = {
@@ -41,7 +43,7 @@ export function initializeYjsEditor(sessionId, username, language, initialConten
     ydoc,
     {
       connect: true,
-      awareness: true,
+      awareness: false,  // Disable awareness to avoid compatibility issues
       resyncInterval: 5000
     }
   );
@@ -50,15 +52,6 @@ export function initializeYjsEditor(sessionId, username, language, initialConten
   if (ytext.length === 0 && initialContent) {
     ytext.insert(0, initialContent);
   }
-
-  // Set local user awareness
-  provider.awareness.setLocalState({
-    user: {
-      name: username,
-      color: '#' + Math.floor(Math.random() * 16777215).toString(16),
-      colorLight: '#' + Math.floor(Math.random() * 16777215).toString(16)
-    }
-  });
 
   // Initialize CodeMirror
   const mode = MODE_MAP[language] || 'javascript';
@@ -87,7 +80,8 @@ export function initializeYjsEditor(sessionId, username, language, initialConten
   });
 
   // Bind CodeMirror to Yjs
-  const binding = new CodemirrorBinding(ytext, editor, new Set([provider.awareness]), provider);
+  // Note: awareness is disabled, so pass empty Set
+  const binding = new CodemirrorBinding(ytext, editor, new Set(), provider);
 
   // Monitor connection status
   provider.on('status', event => {
@@ -96,20 +90,12 @@ export function initializeYjsEditor(sessionId, username, language, initialConten
       if (event.status === 'connected') {
         statusEl.textContent = '✓ Connected';
         statusEl.style.color = '#4CAF50';
+        console.log('[Yjs] Connected for session:', sessionId);
       } else {
         statusEl.textContent = '⟳ Connecting...';
         statusEl.style.color = '#FF9800';
       }
     }
-    console.log('[Yjs] Connection status:', event.status);
-  });
-
-  // Monitor awareness changes (other users)
-  provider.awareness.on('change', changes => {
-    const users = Array.from(provider.awareness.getStates().entries())
-      .map(([clientID, state]) => state.user?.name)
-      .filter(Boolean);
-    console.log('[Yjs] Active users:', users);
   });
 
   // Log Yjs state
@@ -128,4 +114,10 @@ export function cleanupYjs(provider) {
     provider.disconnect();
     provider.destroy();
   }
+}
+
+// Export to window for non-module scripts
+if (typeof window !== 'undefined') {
+  window.initializeYjsEditor = initializeYjsEditor;
+  window.cleanupYjs = cleanupYjs;
 }

@@ -132,12 +132,6 @@ if [ ! -f "websockets.go" ]; then
 fi
 print_success "websockets.go found"
 
-if [ ! -f "websockets_yjs.go" ]; then
-    print_error "websockets_yjs.go not found"
-    exit 1
-fi
-print_success "websockets_yjs.go found"
-
 if [ ! -f "static/app.js" ]; then
     print_error "static/app.js not found (bundle not created?)"
     exit 1
@@ -154,7 +148,7 @@ print_success "All dependencies installed and configured"
 echo ""
 echo "To start the server, run:"
 echo ""
-echo "    go run main.go handlers.go websockets.go websockets_yjs.go"
+echo "    go run main.go handlers.go websockets.go"
 echo ""
 echo "Then open: http://localhost:8080"
 echo ""
