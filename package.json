@@ -1,0 +1,21 @@
+{
+  "name": "cocode-frontend",
+  "version": "1.0.0",
+  "description": "Collaborative code editor frontend with Yjs",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild frontend/app.js --bundle --outfile=static/app.js --loader:.css=text",
+    "watch": "esbuild frontend/app.js --bundle --outfile=static/app.js --loader:.css=text --watch"
+  },
+  "dependencies": {
+    "codemirror": "^5.65.2",
+    "lib0": "^0.2.104",
+    "y-codemirror": "^3.0.1",
+    "y-protocols": "^1.0.6",
+    "y-websocket": "^1.5.0",
+    "yjs": "^13.6.8"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.0"
+  }
+}

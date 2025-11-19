@@ -11,6 +11,7 @@
             {{if ne .Session.Owner .Username}}
             <span style="color: #666;">(You are a collaborator)</span>
             {{end}}
+            <span id="connection-status" style="margin-left: 20px; color: #FF9800;">⟳ Connecting...</span>
         </div>
     </div>
 
@@ -29,8 +30,24 @@
     </div>
 </div>
 
+<script type="module">
+    // Import Yjs and bindings (after npm install)
+    // import { initializeYjsEditor, cleanupYjs } from '/static/app.js';
+    
+    // For now, use the legacy WebSocket approach
+    // Once you run: npm install && npm run build
+    // You can uncomment above and use:
+    // const { ydoc, provider, binding, editor } = initializeYjsEditor(
+    //     "{{.SessionID}}", "{{.Username}}", "{{.Session.Language}}", `{{.Session.Content}}`
+    // );
+    // window.addEventListener('beforeunload', () => cleanupYjs(provider));
+    
+    console.log('[Cocode] Editor initialized');
+    console.log('[Cocode] To enable Yjs: npm install && npm run build');
+</script>
+
+<!-- Legacy WebSocket implementation (fallback) -->
 <script>
-    // Function to get CodeMirror mode based on language
     function getCodeMirrorMode(language) {
         var modes = {
             "JavaScript": "javascript",
@@ -43,7 +60,6 @@
         return modes[language] || "javascript";
     }
 
-    // Initialize CodeMirror after page load
     document.addEventListener('DOMContentLoaded', function() {
         var language = "{{.Session.Language}}";
         var mode = getCodeMirrorMode(language);
@@ -77,8 +93,14 @@
         // WebSocket connection for real-time collaboration
         var ws = new WebSocket("ws://" + window.location.host + "/ws?session_id=" + sessionId + "&username=" + encodeURIComponent(username));
 
+        var statusEl = document.getElementById('connection-status');
+
         ws.onopen = function() {
-            console.log("WebSocket connected for real-time collaboration");
+            console.log("[WebSocket] Connected for real-time collaboration");
+            if (statusEl) {
+                statusEl.textContent = "✓ Connected";
+                statusEl.style.color = "#4CAF50";
+            }
         };
 
         ws.onmessage = function(event) {
@@ -95,11 +117,19 @@
         };
 
         ws.onclose = function() {
-            console.log("WebSocket disconnected");
+            console.log("[WebSocket] Disconnected");
+            if (statusEl) {
+                statusEl.textContent = "✗ Disconnected";
+                statusEl.style.color = "#f44336";
+            }
         };
 
         ws.onerror = function(error) {
-            console.error("WebSocket error:", error);
+            console.error("[WebSocket] Error:", error);
+            if (statusEl) {
+                statusEl.textContent = "✗ Error";
+                statusEl.style.color = "#f44336";
+            }
         };
 
         // Send code updates on change with debouncing

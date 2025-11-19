@@ -2,3 +2,6 @@
 *.db-journal
 *.sqlite
 *.sqlite3
+/docs
+package-lock.json
+/node_modules

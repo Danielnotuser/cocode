@@ -12,157 +12,241 @@ import (
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		return true // В продакшене нужно проверять origin
+		return true
 	},
 }
 
-// Hub управляет всеми активными подключениями
-type Hub struct {
-	// sessions хранит подключения по ID сессии
-	sessions map[string]map[*Client]bool
-	mu       sync.RWMutex
+// YjsHub manages Yjs document state and WebSocket connections for collaborative editing
+type YjsHub struct {
+	sessionDocs map[string]*SessionDoc
+	mu          sync.RWMutex
 }
 
-// Client представляет подключение WebSocket
-type Client struct {
-	hub       *Hub
-	conn      *websocket.Conn
-	send      chan []byte
+type SessionDoc struct {
+	sessionID  string
+	clients    map[*YjsClient]bool
+	updateBuf  [][]byte
+	clockMutex sync.Mutex
+	clock      int
+	mu         sync.RWMutex
+}
+
+type YjsClient struct {
+	hub       *YjsHub
 	sessionID string
 	username  string
+	conn      *websocket.Conn
+	send      chan interface{}
+	done      chan struct{}
 }
 
-var hub = &Hub{
-	sessions: make(map[string]map[*Client]bool),
+var yjsHub = &YjsHub{
+	sessionDocs: make(map[string]*SessionDoc),
 }
 
-// Добавляем клиента в хаб
-func (h *Hub) register(client *Client) {
+// YJS Protocol message types
+type YjsMessage struct {
+	Type int             `json:"type"`
+	Data json.RawMessage `json:"data,omitempty"`
+}
+
+type SyncMessage struct {
+	Clock int    `json:"clock"`
+	State []byte `json:"state"`
+}
+
+type UpdateMessage struct {
+	Update []byte `json:"update"`
+}
+
+// getOrCreateSessionDoc retrieves or creates a session document
+func (h *YjsHub) getOrCreateSessionDoc(sessionID string) *SessionDoc {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if h.sessions[client.sessionID] == nil {
-		h.sessions[client.sessionID] = make(map[*Client]bool)
+	if doc, exists := h.sessionDocs[sessionID]; exists {
+		return doc
 	}
-	h.sessions[client.sessionID][client] = true
+
+	doc := &SessionDoc{
+		sessionID: sessionID,
+		clients:   make(map[*YjsClient]bool),
+		updateBuf: make([][]byte, 0),
+		clock:     0,
+	}
+	h.sessionDocs[sessionID] = doc
+	return doc
 }
 
-// Удаляем клиента из хаба
-func (h *Hub) unregister(client *Client) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+// registerClient adds a client to the session
+func (doc *SessionDoc) registerClient(client *YjsClient) {
+	doc.mu.Lock()
+	defer doc.mu.Unlock()
+	doc.clients[client] = true
+}
 
-	if clients, ok := h.sessions[client.sessionID]; ok {
-		delete(clients, client)
-		if len(clients) == 0 {
-			delete(h.sessions, client.sessionID)
-		}
+// unregisterClient removes a client from the session
+func (doc *SessionDoc) unregisterClient(client *YjsClient) {
+	doc.mu.Lock()
+	defer doc.mu.Unlock()
+
+	delete(doc.clients, client)
+	if len(doc.clients) == 0 {
+		yjsHub.mu.Lock()
+		delete(yjsHub.sessionDocs, doc.sessionID)
+		yjsHub.mu.Unlock()
 	}
 }
 
-// Рассылаем сообщение всем клиентам в сессии
-func (h *Hub) broadcast(sessionID string, message []byte, sender *Client) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+// broadcastUpdate sends an update to all clients except sender
+func (doc *SessionDoc) broadcastUpdate(update []byte, sender *YjsClient) {
+	doc.mu.RLock()
+	defer doc.mu.RUnlock()
 
-	if clients, ok := h.sessions[sessionID]; ok {
-		for client := range clients {
-			if client != sender {
-				select {
-				case client.send <- message:
-				default:
-					close(client.send)
-					delete(clients, client)
-				}
+	for client := range doc.clients {
+		if client != sender {
+			select {
+			case client.send <- UpdateMessage{Update: update}:
+			default:
 			}
 		}
 	}
 }
 
-// Обработчик WebSocket соединения
-func serveWs(w http.ResponseWriter, r *http.Request) {
-	sessionID := r.URL.Query().Get("session_id")
+// Handler for WebSocket connections with Yjs protocol
+func serveYjsWs(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.URL.Query().Get("session")
+	if sessionID == "" {
+		sessionID = r.URL.Query().Get("session_id")
+	}
 	username := r.URL.Query().Get("username")
 
 	if sessionID == "" || username == "" {
-		http.Error(w, "Session ID and username required", http.StatusBadRequest)
+		http.Error(w, "Missing session or username", http.StatusBadRequest)
 		return
+	}
+
+	// Verify user has access to session
+	sessionIDInt, err := strconv.Atoi(sessionID)
+	if err != nil {
+		http.Error(w, "Invalid session ID", http.StatusBadRequest)
+		return
+	}
+
+	var owner string
+	err = db.QueryRow(`SELECT u.username FROM sessions s 
+		JOIN users u ON s.owner_id = u.user_id WHERE s.session_id = ?`, sessionIDInt).Scan(&owner)
+	if err != nil {
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	}
+
+	if owner != username {
+		var collabCount int
+		err = db.QueryRow(`SELECT COUNT(*) FROM collabs c 
+			JOIN users u ON c.user_id = u.user_id 
+			WHERE c.session_id = ? AND u.username = ?`, sessionIDInt, username).Scan(&collabCount)
+		if err != nil || collabCount == 0 {
+			http.Error(w, "Access denied", http.StatusForbidden)
+			return
+		}
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println("WebSocket upgrade error:", err)
+		log.Println("[Yjs] WebSocket upgrade error:", err)
 		return
 	}
 
-	client := &Client{
-		hub:       hub,
-		conn:      conn,
-		send:      make(chan []byte, 256),
+	client := &YjsClient{
+		hub:       yjsHub,
 		sessionID: sessionID,
 		username:  username,
+		conn:      conn,
+		send:      make(chan interface{}, 256),
+		done:      make(chan struct{}),
 	}
 
-	client.hub.register(client)
+	sessionDoc := yjsHub.getOrCreateSessionDoc(sessionID)
+	sessionDoc.registerClient(client)
 
-	// Запускаем горутины для чтения и записи
+	log.Printf("[Yjs] Client connected: %s to session %s\n", username, sessionID)
+
+	go client.readPump(sessionDoc)
 	go client.writePump()
-	go client.readPump()
 }
 
-func (c *Client) readPump() {
+func (c *YjsClient) readPump(sessionDoc *SessionDoc) {
 	defer func() {
-		c.hub.unregister(c)
+		sessionDoc.unregisterClient(c)
+		close(c.done)
 		c.conn.Close()
+		log.Printf("[WebSocket] Client disconnected: %s from session %s\n", c.username, c.sessionID)
 	}()
 
 	for {
-		_, message, err := c.conn.ReadMessage()
-		if err != nil {
-			break
-		}
-
-		// Обрабатываем сообщение и сохраняем в базу
 		var msg map[string]interface{}
-		if err := json.Unmarshal(message, &msg); err == nil {
-			if msg["type"] == "code_update" {
-				// Сохраняем изменения в базу
-				sessionID := msg["session_id"].(string)
-				content := msg["content"].(string)
-				username := msg["username"].(string)
-
-				// Парсим session ID
-				sessionIDInt, err := strconv.Atoi(sessionID)
-				if err == nil {
-					// Сохраняем в базу
-					if err := saveSessionContent(sessionIDInt, content, username); err != nil {
-						log.Println("Error saving content from WebSocket:", err)
-					}
-				}
+		err := c.conn.ReadJSON(&msg)
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("[WebSocket] Error: %v\n", err)
 			}
+			return
 		}
 
-		// Рассылаем сообщение всем в сессии
-		c.hub.broadcast(c.sessionID, message, c)
+		// Handle code_update messages from frontend
+		if msgType, ok := msg["type"].(string); ok && msgType == "code_update" {
+			log.Printf("[WebSocket] Code update from %s\n", c.username)
+
+			// Broadcast to all other clients in the session
+			broadcastToOthers(sessionDoc, c, msg)
+		}
 	}
 }
 
-func (c *Client) writePump() {
-	defer func() {
-		c.conn.Close()
-	}()
+// broadcastToOthers sends a message to all clients except the sender
+func broadcastToOthers(sessionDoc *SessionDoc, sender *YjsClient, msg map[string]interface{}) {
+	sessionDoc.mu.RLock()
+	defer sessionDoc.mu.RUnlock()
+
+	for client := range sessionDoc.clients {
+		if client != sender {
+			select {
+			case client.send <- msg:
+			default:
+				log.Printf("[WebSocket] Client buffer full, dropping message\n")
+			}
+		}
+	}
+}
+
+func (c *YjsClient) writePump() {
+	defer c.conn.Close()
 
 	for {
 		select {
-		case message, ok := <-c.send:
+		case msg, ok := <-c.send:
 			if !ok {
 				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
-			if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
+			err := c.conn.WriteJSON(msg)
+			if err != nil {
 				return
 			}
+
+		case <-c.done:
+			return
 		}
 	}
+}
+
+func mustMarshal(v interface{}) json.RawMessage {
+	data, err := json.Marshal(v)
+	if err != nil {
+		log.Printf("[WebSocket] Marshal error: %v\n", err)
+		return json.RawMessage{}
+	}
+	return json.RawMessage(data)
 }
