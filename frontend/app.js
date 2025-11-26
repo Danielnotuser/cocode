@@ -67,75 +67,75 @@ export function initializeYjsEditor(sessionId, username, language, initialConten
   // Connect to the server's /ws endpoint and pass session/username as query params
   // WebsocketProvider builds the final URL as serverUrl + "/" + roomname + "?" + params
   // We use roomname = "ws" so the final URL becomes "/ws?session=...&username=..." which the Go handler expects.
-  const provider = new WebsocketProvider(
-    `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname + ":" + "1234"}`,
-    'ws',
-    ydoc,
-    {
-      connect: true,
-      params: { session: sessionId, username: username },
-      // Provide a WebSocket wrapper to capture and log incoming messages that might be malformed
-      WebSocketPolyfill: function(url, protocols) {
-        const inner = new window.WebSocket(url, protocols);
-        inner.binaryType = 'arraybuffer';
-        const wrapper = {};
-        // proxy readyState
-        Object.defineProperty(wrapper, 'readyState', { get: () => inner.readyState });
-        // proxy send/close/addEventListener/removeEventListener
-        wrapper.send = function(data) {
-          try {
-            if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
-              const len = data.byteLength !== undefined ? data.byteLength : data.length;
-              console.debug('[Yjs WS] outgoing binary length:', len);
-            } else {
-              console.debug('[Yjs WS] outgoing non-binary send, type:', typeof data, data);
-            }
-          } catch (e) {
-            console.warn('[Yjs WS] error inspecting outgoing data', e);
-          }
-          return inner.send(data);
-        };
-        wrapper.close = function(code, reason) { return inner.close(code, reason); };
-        wrapper.addEventListener = function() { return inner.addEventListener.apply(inner, arguments); };
-        wrapper.removeEventListener = function() { return inner.removeEventListener.apply(inner, arguments); };
-        // forward onopen/onclose/onerror directly
-        Object.defineProperty(wrapper, 'onopen', { set(fn) { inner.onopen = fn; }, get() { return inner.onopen; } });
-        Object.defineProperty(wrapper, 'onclose', { set(fn) { inner.onclose = fn; }, get() { return inner.onclose; } });
-        Object.defineProperty(wrapper, 'onerror', { set(fn) { inner.onerror = fn; }, get() { return inner.onerror; } });
-        // intercept onmessage assignment so we can wrap the handler with try/catch and logging
-        Object.defineProperty(wrapper, 'onmessage', {
-          set(fn) {
-            inner.onmessage = function(event) {
-              try {
-                // Log message type/length for debugging malformed frames
-                try {
-                  if (event && event.data) {
-                    if (event.data instanceof ArrayBuffer || ArrayBuffer.isView(event.data)) {
-                      const len = event.data.byteLength !== undefined ? event.data.byteLength : event.data.length;
-                      console.debug('[Yjs WS] incoming binary length:', len);
-                    } else {
-                      console.debug('[Yjs WS] incoming non-binary message, type:', typeof event.data, event.data);
-                    }
-                  }
-                } catch (e) {
-                  console.warn('[Yjs WS] error inspecting event.data', e);
-                }
-                fn && fn(event);
-              } catch (err) {
-                console.error('[Yjs WS] handler error (caught):', err, event && event.data);
-                // swallow to avoid uncaught errors crashing message handling
-              }
-            };
-          },
-          get() { return inner.onmessage; }
-        });
-        return wrapper;
-      },
-      //awareness: false,  // Disable awareness to avoid compatibility issues
-      resyncInterval: 5000
-    }
-  );
-
+  // const provider = new WebsocketProvider(
+  //   `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname + ":" + "1234"}`,
+  //   'ws',
+  //   ydoc,
+  //   {
+  //     connect: true,
+  //     //params: { session: sessionId, username: username },
+  //     // Provide a WebSocket wrapper to capture and log incoming messages that might be malformed
+  //     WebSocketPolyfill: function(url, protocols) {
+  //       const inner = new window.WebSocket(url, protocols);
+  //       inner.binaryType = 'arraybuffer';
+  //       const wrapper = {};
+  //       // proxy readyState
+  //       Object.defineProperty(wrapper, 'readyState', { get: () => inner.readyState });
+  //       // proxy send/close/addEventListener/removeEventListener
+  //       wrapper.send = function(data) {
+  //         try {
+  //           if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
+  //             const len = data.byteLength !== undefined ? data.byteLength : data.length;
+  //             console.debug('[Yjs WS] outgoing binary length:', len);
+  //           } else {
+  //             console.debug('[Yjs WS] outgoing non-binary send, type:', typeof data, data);
+  //           }
+  //         } catch (e) {
+  //           console.warn('[Yjs WS] error inspecting outgoing data', e);
+  //         }
+  //         return inner.send(data);
+  //       };
+  //       wrapper.close = function(code, reason) { return inner.close(code, reason); };
+  //       wrapper.addEventListener = function() { return inner.addEventListener.apply(inner, arguments); };
+  //       wrapper.removeEventListener = function() { return inner.removeEventListener.apply(inner, arguments); };
+  //       // forward onopen/onclose/onerror directly
+  //       Object.defineProperty(wrapper, 'onopen', { set(fn) { inner.onopen = fn; }, get() { return inner.onopen; } });
+  //       Object.defineProperty(wrapper, 'onclose', { set(fn) { inner.onclose = fn; }, get() { return inner.onclose; } });
+  //       Object.defineProperty(wrapper, 'onerror', { set(fn) { inner.onerror = fn; }, get() { return inner.onerror; } });
+  //       // intercept onmessage assignment so we can wrap the handler with try/catch and logging
+  //       Object.defineProperty(wrapper, 'onmessage', {
+  //         set(fn) {
+  //           inner.onmessage = function(event) {
+  //             try {
+  //               // Log message type/length for debugging malformed frames
+  //               try {
+  //                 if (event && event.data) {
+  //                   if (event.data instanceof ArrayBuffer || ArrayBuffer.isView(event.data)) {
+  //                     const len = event.data.byteLength !== undefined ? event.data.byteLength : event.data.length;
+  //                     console.debug('[Yjs WS] incoming binary length:', len);
+  //                   } else {
+  //                     console.debug('[Yjs WS] incoming non-binary message, type:', typeof event.data, event.data);
+  //                   }
+  //                 }
+  //               } catch (e) {
+  //                 console.warn('[Yjs WS] error inspecting event.data', e);
+  //               }
+  //               fn && fn(event);
+  //             } catch (err) {
+  //               console.error('[Yjs WS] handler error (caught):', err, event && event.data);
+  //               // swallow to avoid uncaught errors crashing message handling
+  //             }
+  //           };
+  //         },
+  //         get() { return inner.onmessage; }
+  //       });
+  //       return wrapper;
+  //     },
+  //     //awareness: false,  // Disable awareness to avoid compatibility issues
+  //     resyncInterval: 5000
+  //   }
+  // );
+  const provider = new WebsocketProvider('ws://localhost:1234', 'my-roomname', ydoc)
   // Set initial content if this is first user
   if (ytext.length === 0 && initialContent) {
     ytext.insert(0, initialContent);
