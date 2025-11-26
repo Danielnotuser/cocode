@@ -178,7 +178,7 @@ export function initializeYjsEditor(sessionId, username, language, initialConten
   console.log('[Yjs] Before binding: ytext type=', ytext.constructor.name, ', editor=', editor ? 'ready' : 'null');
   const binding = new CodemirrorBinding(ytext, editor, provider.awareness, provider);
   console.log('[Yjs] After binding created');
-
+  binding.awareness.setLocalStateField('user', { color: ('#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')), name: username })
   // Monitor connection status
   provider.on('status', event => {
     const statusEl = document.getElementById('connection-status');
