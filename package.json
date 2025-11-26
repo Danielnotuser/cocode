@@ -8,6 +8,7 @@
     "watch": "esbuild frontend/app.js --bundle --outfile=static/app.js --loader:.css=text --watch"
   },
   "dependencies": {
+    "@y/websocket-server": "^0.1.1",
     "codemirror": "^5.65.2",
     "lib0": "^0.2.114",
     "y-codemirror": "^3.0.1",

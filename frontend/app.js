@@ -68,7 +68,7 @@ export function initializeYjsEditor(sessionId, username, language, initialConten
   // WebsocketProvider builds the final URL as serverUrl + "/" + roomname + "?" + params
   // We use roomname = "ws" so the final URL becomes "/ws?session=...&username=..." which the Go handler expects.
   const provider = new WebsocketProvider(
-    `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`,
+    `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname + ":" + "1234"}`,
     'ws',
     ydoc,
     {

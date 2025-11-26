@@ -213,7 +213,7 @@ func (c *YjsClient) readPump(sessionDoc *SessionDoc) {
 			log.Printf("[Yjs] Sync step 2 / Awareness from %s\n", c.username)
 			// Client is syncing or sending awareness, acknowledge
 
-		case 2: // Update (from client) — THIS IS THE KEY FIX!
+		case 2: // Update (from client)
 			log.Printf("[Yjs] Update from %s (msg type 2, len=%d)\n", c.username, len(data))
 			// Store update and broadcast to all other clients
 			sessionDoc.clockMutex.Lock()
