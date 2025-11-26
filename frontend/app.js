@@ -135,7 +135,7 @@ export function initializeYjsEditor(sessionId, username, language, initialConten
   //     resyncInterval: 5000
   //   }
   // );
-  const provider = new WebsocketProvider('ws://localhost:1234', 'my-roomname', ydoc)
+  const provider = new WebsocketProvider('ws://localhost:1234', sessionId.toString(), ydoc)
   // Set initial content if this is first user
   if (ytext.length === 0 && initialContent) {
     ytext.insert(0, initialContent);
