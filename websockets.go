@@ -188,36 +188,49 @@ func (c *YjsClient) readPump(sessionDoc *SessionDoc) {
 		}
 
 		msgType := data[0]
+		log.Printf("[Yjs] readPump from %s: received message type=%d, len=%d\n", c.username, msgType, len(data))
 
+		// y-websocket protocol message types:
+		// 0 = Sync Step 1
+		// 1 = Sync Step 2 (also Awareness Update)
+		// 2 = Update (from client)
+		// 3 = Query Awareness
 		switch msgType {
 		case 0: // Sync Step 1
 			log.Printf("[Yjs] Sync step 1 from %s\n", c.username)
-			// Send back our document state (Sync Step 2)
-			syncStep2 := []byte{1} // Type 1 = Sync Step 2
+			// Reply by sending all buffered messages exactly as they were received.
+			// Those messages already contain the proper Yjs message framing and will be
+			// understood by the client. This avoids attempting to reconstruct a single
+			// combined Sync Step 2 buffer which can lead to malformed frames.
 			sessionDoc.mu.RLock()
 			for _, update := range sessionDoc.updateBuf {
-				syncStep2 = append(syncStep2, update...)
+				// send each stored message as-is
+				c.send <- update
 			}
 			sessionDoc.mu.RUnlock()
-			c.send <- syncStep2
 
-		case 1: // Sync Step 2
-			log.Printf("[Yjs] Sync step 2 from %s\n", c.username)
-			// Client is syncing, acknowledge
+		case 1: // Sync Step 2 or Awareness Update
+			log.Printf("[Yjs] Sync step 2 / Awareness from %s\n", c.username)
+			// Client is syncing or sending awareness, acknowledge
 
-		case 3: // Update (from client)
-			log.Printf("[Yjs] Update from %s\n", c.username)
+		case 2: // Update (from client) — THIS IS THE KEY FIX!
+			log.Printf("[Yjs] Update from %s (msg type 2, len=%d)\n", c.username, len(data))
 			// Store update and broadcast to all other clients
 			sessionDoc.clockMutex.Lock()
 			sessionDoc.clock++
 			sessionDoc.clockMutex.Unlock()
 
+			// Store the full binary message as received so we can replay it to newly connecting clients
 			sessionDoc.mu.Lock()
-			sessionDoc.updateBuf = append(sessionDoc.updateBuf, data[1:])
+			sessionDoc.updateBuf = append(sessionDoc.updateBuf, data)
 			sessionDoc.mu.Unlock()
 
 			// Broadcast update to all other clients
 			broadcastToOthers(sessionDoc, c, data)
+
+		case 3: // Query Awareness
+			log.Printf("[Yjs] Query Awareness from %s\n", c.username)
+			// TODO: implement awareness queries if needed
 
 		default:
 			log.Printf("[Yjs] Unknown message type: %d from %s\n", msgType, c.username)
@@ -228,14 +241,18 @@ func (c *YjsClient) readPump(sessionDoc *SessionDoc) {
 // broadcastToOthers sends a binary message to all clients except the sender
 func broadcastToOthers(sessionDoc *SessionDoc, sender *YjsClient, data []byte) {
 	sessionDoc.mu.RLock()
+	clientsCount := len(sessionDoc.clients)
 	defer sessionDoc.mu.RUnlock()
+
+	// Log broadcast details for debugging
+	log.Printf("[Yjs] Broadcasting message from %s to %d peers (session %s); payload len=%d\n", sender.username, clientsCount-1, sessionDoc.sessionID, len(data))
 
 	for client := range sessionDoc.clients {
 		if client != sender {
 			select {
 			case client.send <- data:
 			default:
-				log.Printf("[Yjs] Client buffer full, dropping message\n")
+				log.Printf("[Yjs] Client buffer full, dropping message for %s\n", client.username)
 			}
 		}
 	}
@@ -254,10 +271,15 @@ func (c *YjsClient) writePump() {
 
 			// Handle binary data from Yjs
 			if data, ok := msg.([]byte); ok {
+				log.Printf("[Yjs] writePump for %s: sending binary msg len=%d\n", c.username, len(data))
 				err := c.conn.WriteMessage(websocket.BinaryMessage, data)
 				if err != nil {
+					log.Printf("[Yjs] writePump for %s: error sending: %v\n", c.username, err)
 					return
 				}
+				log.Printf("[Yjs] writePump for %s: sent successfully\n", c.username)
+			} else {
+				log.Printf("[Yjs] writePump for %s: msg is not []byte, type=%T\n", c.username, msg)
 			}
 
 		case <-c.done:
