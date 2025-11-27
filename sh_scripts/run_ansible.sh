@@ -1,14 +1,14 @@
 #!/bin/bash
 
-INVENTORY="inventory.yml"
+INVENTORY="../ansible/inventory.yml"
 
 case "$1" in
     "deploy")
         echo "Deploying application..."
-        ansible-playbook -i $INVENTORY deploy.yml
+        ansible-playbook -i $INVENTORY ../ansible/deploy.yml
         ;;
     "stop")
         echo "Stopping servers..."
-        ansible-playbook -i $INVENTORY stop.yml
+        ansible-playbook -i $INVENTORY ../ansible/stop.yml
         ;;
 esac
