@@ -136,7 +136,7 @@ export function initializeYjsEditor(sessionId, username, language, initialConten
   //     resyncInterval: 5000
   //   }
   // );
-  const provider = new WebsocketProvider('ws://localhost:1234', sessionId.toString(), ydoc)
+  const provider = new WebsocketProvider(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname + ":" + "1234"}`, sessionId.toString(), ydoc)
   const dbprovider = new IndexeddbPersistence(sessionId.toString(), ydoc)
   dbprovider.on('synced', () => {
     console.log('content from the database is loaded')
