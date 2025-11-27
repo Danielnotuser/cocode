@@ -6,6 +6,7 @@
 import * as Y from 'yjs';
 import { CodemirrorBinding } from 'y-codemirror';
 import { WebsocketProvider } from 'y-websocket';
+import { IndexeddbPersistence } from 'y-indexeddb'
 
 // Import CodeMirror and required modes/addons so esbuild bundles them into static/app.js.
 // This avoids loading a separate CDN copy and ensures addons like defineSimpleMode are present.
@@ -136,9 +137,13 @@ export function initializeYjsEditor(sessionId, username, language, initialConten
   //   }
   // );
   const provider = new WebsocketProvider('ws://localhost:1234', sessionId.toString(), ydoc)
+  const dbprovider = new IndexeddbPersistence(sessionId.toString(), ydoc)
+  dbprovider.on('synced', () => {
+    console.log('content from the database is loaded')
+  })
   // Set initial content if this is first user
   if (ytext.length === 0 && initialContent) {
-    ytext.insert(0, initialContent);
+    //ytext.insert(0, initialContent);
   }
 
   // Initialize CodeMirror
