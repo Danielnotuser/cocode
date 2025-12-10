@@ -36,6 +36,13 @@
         {{end}}
     </div>
 
+    {{if eq .Session.Language "Python"}}
+    <div class="editor-inputs" style="margin-top:12px;">
+        <label style="display:block; margin-bottom:6px; color:#666">Program Input (stdin):</label>
+        <textarea id="program-stdin" placeholder="Enter input for the program (stdin)" style="width:100%; min-height:80px; font-family:monospace;"></textarea>
+    </div>
+    {{end}}
+
     <div id="interpret-output" style="white-space:pre-wrap; background:#1e1e1e; color:#ddd; padding:10px; margin-top:12px; border-radius:4px; display:none; max-height:400px; overflow:auto;"></div>
 </div>
 
@@ -97,12 +104,14 @@
                         code = '';
                     }
 
-                    // send to server
+                    // send to server (include stdin if present)
                     try {
+                        const stdinArea = document.getElementById('program-stdin');
+                        const stdinVal = stdinArea ? stdinArea.value : '';
                         const resp = await fetch('/interpret', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ session_id: "{{.SessionID}}", content: code })
+                            body: JSON.stringify({ session_id: "{{.SessionID}}", content: code, stdin: stdinVal })
                         });
                         const data = await resp.json();
                         const hasError = !resp.ok || data.error;

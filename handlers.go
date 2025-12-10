@@ -365,6 +365,7 @@ func interpretHandler(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		SessionID string `json:"session_id"`
 		Content   string `json:"content"`
+		Stdin     string `json:"stdin,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, "Invalid payload", http.StatusBadRequest)
@@ -427,10 +428,17 @@ func interpretHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Run the code inside docker with timeout and limited resources
+	// Use a shell heredoc to create the script inside the container so stdin can be reserved for the program input
+	// Build a shell command that writes the script from a quoted heredoc and then runs it
+	safeCmd := "cat > /home/runner/script.py <<'PY'\n" + payload.Content + "\nPY\npython -u /home/runner/script.py"
+
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "-i", "--network", "none", "--memory", "256m", "--cpus", "0.5", img, "python", "-u", "-")
-	cmd.Stdin = strings.NewReader(payload.Content)
+	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "-i", "--network", "none", "--memory", "256m", "--cpus", "0.5", img, "sh", "-lc", safeCmd)
+	// Provide user-supplied program input on stdin (if any)
+	if payload.Stdin != "" {
+		cmd.Stdin = strings.NewReader(payload.Stdin)
+	}
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		json.NewEncoder(w).Encode(InterpretResponse{Success: false, Error: "Execution timed out"})
