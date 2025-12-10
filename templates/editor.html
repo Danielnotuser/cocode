@@ -105,15 +105,25 @@
                             body: JSON.stringify({ session_id: "{{.SessionID}}", content: code })
                         });
                         const data = await resp.json();
-                        if (!resp.ok || data.error) {
+                        const hasError = !resp.ok || data.error;
+                        if (hasError) {
                             if (statusEl) {
                                 statusEl.textContent = 'Error';
                                 statusEl.style.color = '#f44336';
                             }
-                            const errText = data.error || 'Unknown error';
+                            // Show both error message and any captured output (stdout/stderr)
+                            let combined = '';
+                            if (data.error) {
+                                combined += 'Error: ' + data.error;
+                            }
+                            if (data.output) {
+                                if (combined) combined += '\n\n';
+                                combined += data.output;
+                            }
+                            if (!combined) combined = 'Unknown error';
                             if (outputEl) {
                                 outputEl.style.display = 'block';
-                                outputEl.textContent = errText;
+                                outputEl.textContent = combined;
                                 outputEl.style.color = '#f44336';
                             }
                         } else {
