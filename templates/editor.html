@@ -46,6 +46,18 @@
     <div id="interpret-output" style="white-space:pre-wrap; background:#1e1e1e; color:#ddd; padding:10px; margin-top:12px; border-radius:4px; display:none; max-height:400px; overflow:auto;"></div>
 </div>
 
+{{if eq .Session.Language "HTML"}}
+<div class="html-preview-container" style="max-width:1200px; margin:0 auto; padding: 0 2rem;">
+    <div style="display:flex; gap:12px; align-items:center; margin-top:12px;">
+        <label style="color:#666;">Live Preview</label>
+        <button id="refresh-preview" class="collab-btn" style="padding:6px 10px;">Refresh</button>
+        <label style="margin-left:12px; color:#666; display:flex; gap:6px; align-items:center;"><input id="auto-preview" type="checkbox" checked> Auto-update</label>
+        <label style="margin-left:12px; color:#666; display:flex; gap:6px; align-items:center;"><input id="allow-scripts" type="checkbox"> Allow scripts</label>
+    </div>
+    <iframe id="html-preview" sandbox="" style="width:100%; height:400px; border:1px solid #ddd; margin-top:8px; border-radius:6px;"></iframe>
+</div>
+{{end}}
+
 <!-- Load frontend bundle (contains CodeMirror + Yjs) -->
 <script src="/static/app.js"></script>
 
@@ -161,6 +173,67 @@
             }
 
             console.log('[Yjs] Editor initialized with collaborative editing');
+            // HTML preview support (live render) — only for HTML sessions
+            try {
+                if ("{{.Session.Language}}" === "HTML") {
+                    const previewIframe = document.getElementById('html-preview');
+                    const refreshBtn = document.getElementById('refresh-preview');
+                    const autoCheckbox = document.getElementById('auto-preview');
+                    const allowScripts = document.getElementById('allow-scripts');
+
+                    const updatePreview = () => {
+                        try {
+                            let content = '';
+                            if (window.activeEditor && typeof window.activeEditor.getValue === 'function') {
+                                content = window.activeEditor.getValue();
+                            } else {
+                                const ta = document.getElementById('code-editor');
+                                content = ta ? ta.value : '';
+                            }
+                            if (!previewIframe) return;
+                            // Set sandbox according to allowScripts checkbox
+                            if (allowScripts && allowScripts.checked) {
+                                previewIframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms');
+                            } else {
+                                previewIframe.setAttribute('sandbox', '');
+                            }
+                            previewIframe.srcdoc = content;
+                        } catch (err) {
+                            console.error('[Preview] update error', err);
+                        }
+                    };
+
+                    // Debounce helper
+                    let previewTimer = null;
+                    const scheduleUpdate = (delay = 300) => {
+                        if (previewTimer) clearTimeout(previewTimer);
+                        previewTimer = setTimeout(() => { updatePreview(); previewTimer = null; }, delay);
+                    };
+
+                    // Hook editor changes if available
+                    if (window.activeEditor && typeof window.activeEditor.on === 'function') {
+                        // CodeMirror 5 uses .on('change', ...)
+                        window.activeEditor.on('change', () => {
+                            if (autoCheckbox && autoCheckbox.checked) scheduleUpdate(300);
+                        });
+                    } else {
+                        // Fallback: poll textarea
+                        const ta = document.getElementById('code-editor');
+                        if (ta && autoCheckbox && autoCheckbox.checked) {
+                            ta.addEventListener('input', () => { if (autoCheckbox.checked) scheduleUpdate(300); });
+                        }
+                    }
+
+                    if (refreshBtn) refreshBtn.addEventListener('click', (e) => { e.preventDefault(); updatePreview(); });
+                    if (autoCheckbox) autoCheckbox.addEventListener('change', () => { if (autoCheckbox.checked) scheduleUpdate(0); });
+                    if (allowScripts) allowScripts.addEventListener('change', () => { updatePreview(); });
+
+                    // Initial render
+                    scheduleUpdate(50);
+                }
+            } catch (err) {
+                console.warn('[Preview] initialization failed', err);
+            }
         } catch (error) {
             console.error('[Yjs] Error initializing editor:', error);
             console.error('Stack:', error.stack);
