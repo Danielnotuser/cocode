@@ -4,7 +4,7 @@
   become_user: "{{ ansible_user }}"
   become: yes  
   vars:
-    app_dir: "/home/{{ ansible_user }}/cocode-app"
+    app_dir: "/home/{{ ansible_user }}/cocode-app-new"
     
   tasks:
     - name: Install Node.js (если не установлен)
@@ -80,8 +80,7 @@
       args:
         executable: /bin/bash
       environment:
-        HOST: "0.0.0.0"
-        PORT: "1234"
+        PORT: "81"
 
     - name: Wait for servers to start
       wait_for:
@@ -90,8 +89,8 @@
         delay: 3
         timeout: 15
       loop:
-        - 8080
-        - 1234
+        - 80
+        - 81
 
     - name: Check running processes
       shell: |

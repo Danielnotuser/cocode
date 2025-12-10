@@ -70,6 +70,6 @@ func main() {
 	//http.HandleFunc("/ws", serveYjsWs)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
-	log.Println("Server started on http://localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Println("Server started on http://localhost:80")
+	log.Fatal(http.ListenAndServe(":80", nil))
 }
