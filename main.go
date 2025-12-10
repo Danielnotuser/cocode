@@ -65,8 +65,8 @@ func main() {
 	http.HandleFunc("/add-collab", addCollabHandler)
 	http.HandleFunc("/editor", editorHandler)
 	http.HandleFunc("/delete-session", deleteSessionHandler)
-	http.HandleFunc("/save-session", saveSessionHandler) // Добавляем новый обработчик
-	http.HandleFunc("/ws", serveWs)                      // Добавляем WebSocket endpoint
+	http.HandleFunc("/save-session", saveSessionHandler)
+	//http.HandleFunc("/ws", serveYjsWs)
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
 
 	log.Println("Server started on http://localhost:8080")
