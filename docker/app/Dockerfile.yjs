@@ -1,0 +1,17 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Установка y-websocket глобально или локально
+RUN npm install 
+
+RUN npm run build
+
+# Создание директории для данных
+RUN mkdir -p /data
+
+# Экспорт порта
+EXPOSE 1234
+
+# Запуск y-websocket сервера
+CMD ["npx", "y-websocket", "--port", "1234", "--host", "0.0.0.0"]

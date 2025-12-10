@@ -1,7 +1,8 @@
 ---
 - name: Deploy cocode application (simple)
-  hosts: webservers
-  become: no  # Запускаем от пользователя, без sudo
+  hosts: all
+  become_user: "{{ ansible_user }}"
+  become: yes  
   vars:
     app_dir: "/home/{{ ansible_user }}/cocode-app"
     
@@ -12,27 +13,22 @@
 
     - name: Install Go (если не установлен)
       raw: |
-        which go > /dev/null 2>&1 || (wget -q https://golang.org/dl/go1.21.linux-amd64.tar.gz && sudo tar -C /usr/local -xzf go1.21.linux-amd64.tar.gz)
-        grep -q "go/bin" ~/.bashrc || echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+        sudo apt-get install golang -y
 
-    - name: Create application directory
+    - name: Delete directory
+      become_user: "{{ ansible_user }}"
+      become: yes  
       file:
         path: "{{ app_dir }}"
-        state: directory
+        state: absent
 
-    - name: Copy application files
-      copy:
-        src: "{{ item }}"
-        dest: "{{ app_dir }}/"
-      loop:
-        - "package.json"
-        - "go.mod"
-        - "go.sum"
-        - "main.go"
-        - "handlers.go"
-        - "frontend/"
-        - "static/"
-        - "templates/"
+    - name: Create application directory
+      git:
+        repo: "https://github.com/Danielnotuser/cocode.git"
+        dest: "{{ app_dir }}"
+        version: "main"
+        clone: yes
+        update: yes
 
     - name: Install Node.js dependencies
       command: "npm install"
@@ -59,10 +55,14 @@
         PATH: "/usr/local/go/bin:{{ ansible_env.PATH }}"
 
     - name: Kill existing processes
-      shell: |
-        pkill -f "cocode-server" || true
-        pkill -f "y-websocket" || true
-        sleep 2
+      shell: | 
+        pkill -f {{ item }} || true
+      args:
+        executable: /bin/bash
+      loop:
+        - "cocode-server"
+        - "y-websocket"
+      ignore_errors: yes
 
     - name: Start Go server
       shell: |
@@ -79,11 +79,14 @@
         echo $! > websocket.pid
       args:
         executable: /bin/bash
+      environment:
+        HOST: "0.0.0.0"
+        PORT: "1234"
 
     - name: Wait for servers to start
       wait_for:
         port: "{{ item }}"
-        host: 127.0.0.1
+        host: localhost
         delay: 3
         timeout: 15
       loop:

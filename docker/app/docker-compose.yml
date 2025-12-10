@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  # Go сервер приложения
+  cocode-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.go
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./templates:/app/templates
+      - ./static:/app/static
+      - cocode-data:/data
+    environment:
+      - DB_PATH=/data/cocode.db
+    depends_on:
+      - y-websocket
+    restart: unless-stopped
+
+  # y-websocket сервер для collaborative editing
+  y-websocket:
+    build:
+      context: .
+      dockerfile: Dockerfile.yjs
+    ports:
+      - "1234:1234"
+    volumes:
+      - websocket-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  cocode-data:
+    driver: local
+  websocket-data:
+    driver: local
