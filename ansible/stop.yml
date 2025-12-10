@@ -1,0 +1,39 @@
+---
+- name: Stop cocode servers
+  hosts: webservers
+  become: no
+  vars:
+    app_dir: "/home/{{ ansible_user }}/cocode-app"
+    
+  tasks:
+    - name: Stop Go server
+      shell: |
+        pkill -f "cocode-server" || true
+        rm -f {{ app_dir }}/go-server.pid
+      args:
+        executable: /bin/bash
+      register: stop_go
+      changed_when: stop_go.rc == 0
+
+    - name: Stop WebSocket server
+      shell: |
+        pkill -f "y-websocket" || true
+        rm -f {{ app_dir }}/websocket.pid
+      args:
+        executable: /bin/bash
+      register: stop_ws
+      changed_when: stop_ws.rc == 0
+
+    - name: Wait for processes to terminate
+      shell: sleep 3
+
+    - name: Verify processes are stopped
+      shell: |
+        echo "=== Checking remaining processes ==="
+        pgrep -f "cocode-server" && echo "Go server still running" || echo "Go server stopped"
+        pgrep -f "y-websocket" && echo "WebSocket still running" || echo "WebSocket stopped"
+      register: process_check
+
+    - name: Show process verification
+      debug:
+        var: process_check.stdout

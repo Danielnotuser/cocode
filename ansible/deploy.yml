@@ -1,0 +1,103 @@
+---
+- name: Deploy cocode application (simple)
+  hosts: webservers
+  become: no  # Запускаем от пользователя, без sudo
+  vars:
+    app_dir: "/home/{{ ansible_user }}/cocode-app"
+    
+  tasks:
+    - name: Install Node.js (если не установлен)
+      raw: |
+        which node > /dev/null 2>&1 || (curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt-get install -y nodejs)
+
+    - name: Install Go (если не установлен)
+      raw: |
+        which go > /dev/null 2>&1 || (wget -q https://golang.org/dl/go1.21.linux-amd64.tar.gz && sudo tar -C /usr/local -xzf go1.21.linux-amd64.tar.gz)
+        grep -q "go/bin" ~/.bashrc || echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+
+    - name: Create application directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+
+    - name: Copy application files
+      copy:
+        src: "{{ item }}"
+        dest: "{{ app_dir }}/"
+      loop:
+        - "package.json"
+        - "go.mod"
+        - "go.sum"
+        - "main.go"
+        - "handlers.go"
+        - "frontend/"
+        - "static/"
+        - "templates/"
+
+    - name: Install Node.js dependencies
+      command: "npm install"
+      args:
+        chdir: "{{ app_dir }}"
+
+    - name: Build frontend
+      command: "npm run build"
+      args:
+        chdir: "{{ app_dir }}"
+
+    - name: Install Go dependencies
+      command: "go mod tidy"
+      args:
+        chdir: "{{ app_dir }}"
+      environment:
+        PATH: "/usr/local/go/bin:{{ ansible_env.PATH }}"
+
+    - name: Build Go application
+      command: "go build -o cocode-server ."
+      args:
+        chdir: "{{ app_dir }}"
+      environment:
+        PATH: "/usr/local/go/bin:{{ ansible_env.PATH }}"
+
+    - name: Kill existing processes
+      shell: |
+        pkill -f "cocode-server" || true
+        pkill -f "y-websocket" || true
+        sleep 2
+
+    - name: Start Go server
+      shell: |
+        cd {{ app_dir }}
+        nohup ./cocode-server > go-server.log 2>&1 &
+        echo $! > go-server.pid
+      args:
+        executable: /bin/bash
+
+    - name: Start WebSocket server
+      shell: |
+        cd {{ app_dir }}
+        nohup npx y-websocket > websocket.log 2>&1 &
+        echo $! > websocket.pid
+      args:
+        executable: /bin/bash
+
+    - name: Wait for servers to start
+      wait_for:
+        port: "{{ item }}"
+        host: 127.0.0.1
+        delay: 3
+        timeout: 15
+      loop:
+        - 8080
+        - 1234
+
+    - name: Check running processes
+      shell: |
+        echo "=== Go server process ==="
+        ps -p $(cat {{ app_dir }}/go-server.pid 2>/dev/null || echo 0) || echo "Not running"
+        echo "=== WebSocket process ==="
+        ps -p $(cat {{ app_dir }}/websocket.pid 2>/dev/null || echo 0) || echo "Not running"
+      register: process_check
+
+    - name: Show process status
+      debug:
+        var: process_check.stdout

@@ -11,6 +11,7 @@
             {{if ne .Session.Owner .Username}}
             <span style="color: #666;">(You are a collaborator)</span>
             {{end}}
+            <span id="connection-status" style="margin-left: 20px; color: #FF9800;">⟳ Connecting...</span>
         </div>
     </div>
 
@@ -25,216 +26,55 @@
     {{end}}
 
     <div class="editor-area">
-        <textarea id="code-editor">{{.Session.Content}}</textarea>
+        <label><textarea id="code-editor"></textarea></label>
     </div>
 </div>
 
+<!-- Load frontend bundle (contains CodeMirror + Yjs) -->
+<script src="/static/app.js"></script>
+
 <script>
-    // Function to get CodeMirror mode based on language
-    function getCodeMirrorMode(language) {
-        var modes = {
-            "JavaScript": "javascript",
-            "Golang": "go",
-            "Python": "python",
-            "Java": "text/x-java",
-            "HTML": "htmlmixed",
-            "CSS": "css"
-        };
-        return modes[language] || "javascript";
+    // Wait for bundle to load, then initialize
+    function initEditor() {
+        try {
+            console.log('[Yjs] Initializing editor with CRDT support');
+            
+            // Check if functions are available
+            if (typeof window.initializeYjsEditor !== 'function') {
+                throw new Error('initializeYjsEditor not found in window');
+            }
+            
+            const { ydoc, provider, binding, editor } = window.initializeYjsEditor(
+                "{{.SessionID}}", 
+                "{{.Username}}", 
+                "{{.Session.Language}}", 
+                `{{.Session.Content}}`
+            );
+            
+            // Cleanup on unload
+            window.addEventListener('beforeunload', () => {
+                window.cleanupYjs(provider);
+            });
+            
+            console.log('[Yjs] Editor initialized with collaborative editing');
+        } catch (error) {
+            console.error('[Yjs] Error initializing editor:', error);
+            console.error('Stack:', error.stack);
+            
+            const statusEl = document.getElementById('connection-status');
+            if (statusEl) {
+                statusEl.textContent = '✗ Error: ' + error.message;
+                statusEl.style.color = '#f44336';
+            }
+        }
     }
-
-    // Initialize CodeMirror after page load
-    document.addEventListener('DOMContentLoaded', function() {
-        var language = "{{.Session.Language}}";
-        var mode = getCodeMirrorMode(language);
-        var sessionId = "{{.SessionID}}";
-        var username = "{{.Username}}";
-
-        var editor = CodeMirror.fromTextArea(document.getElementById('code-editor'), {
-            lineNumbers: true,
-            mode: mode,
-            theme: "default",
-            indentUnit: 4,
-            smartIndent: true,
-            matchBrackets: true,
-            autoCloseBrackets: true,
-            lineWrapping: true,
-            viewportMargin: Infinity,
-            extraKeys: {
-                "Tab": function(cm) {
-                    if (cm.somethingSelected()) {
-                        cm.indentSelection("add");
-                    } else {
-                        cm.replaceSelection("    ", "end");
-                    }
-                },
-                "Shift-Tab": function(cm) {
-                    cm.indentSelection("subtract");
-                }
-            }
-        });
-
-        // WebSocket connection for real-time collaboration
-        var ws = new WebSocket("ws://" + window.location.host + "/ws?session_id=" + sessionId + "&username=" + encodeURIComponent(username));
-
-        ws.onopen = function() {
-            console.log("WebSocket connected for real-time collaboration");
-        };
-
-        ws.onmessage = function(event) {
-            var data = JSON.parse(event.data);
-
-            if (data.type === 'code_update') {
-                // Update editor content if it's different from current
-                var currentContent = editor.getValue();
-                if (currentContent !== data.content && data.username !== username) {
-                    editor.setValue(data.content);
-                    showMessage('Code updated by ' + data.username, 'info');
-                }
-            }
-        };
-
-        ws.onclose = function() {
-            console.log("WebSocket disconnected");
-        };
-
-        ws.onerror = function(error) {
-            console.error("WebSocket error:", error);
-        };
-
-        // Send code updates on change with debouncing
-        var changeTimer;
-        editor.on("change", function(cm, change) {
-            // Ignore changes that come from setValue (remote updates)
-            if (change.origin === 'setValue') return;
-
-            clearTimeout(changeTimer);
-            changeTimer = setTimeout(function() {
-                var content = cm.getValue();
-                var message = {
-                    type: 'code_update',
-                    content: content,
-                    username: username,
-                    session_id: sessionId
-                };
-                ws.send(JSON.stringify(message));
-            }, 300); // 300ms debounce
-        });
-
-        // Set focus to editor
-        editor.focus();
-
-        // Update editor size after initialization
-        setTimeout(function() {
-            // Get the container dimensions
-            var container = document.querySelector('.editor-area');
-            if (container) {
-                var width = container.clientWidth + 'px';
-                var height = container.clientHeight + 'px';
-                editor.setSize(width, height);
-            }
-        }, 0);
-
-        // Update editor size on window resize
-        window.addEventListener('resize', function() {
-            var container = document.querySelector('.editor-area');
-            if (container) {
-                var width = container.clientWidth + 'px';
-                var height = container.clientHeight + 'px';
-                editor.setSize(width, height);
-            }
-        });
-
-        // Save before leaving page
-        window.addEventListener('beforeunload', function(e) {
-            // Only save if there are unsaved changes
-            var originalContent = "{{.Session.Content}}";
-            // Escape special characters for comparison
-            originalContent = originalContent.replace(/\\n/g, '\n').replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-            if (editor.getValue() !== originalContent) {
-                saveCode(true); // Silent save
-            }
-        });
-
-        function saveCode(silent = false) {
-            var code = editor.getValue();
-
-            fetch('/save-session', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: 'session_id=' + encodeURIComponent(sessionId) + '&content=' + encodeURIComponent(code)
-            })
-                .then(response => {
-                    if (!response.ok) {
-                        return response.text().then(text => {
-                            throw new Error(text);
-                        });
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (!silent) {
-                        if (data.success) {
-                            showMessage('Code saved successfully!', 'success');
-                        } else {
-                            showMessage('Error saving code: ' + data.error, 'error');
-                        }
-                    }
-                })
-                .catch(error => {
-                    if (!silent) {
-                        showMessage('Error saving code: ' + error.message, 'error');
-                    }
-                });
-        }
-
-        function showMessage(message, type) {
-            // Remove existing messages
-            var existingMessage = document.querySelector('.save-message');
-            if (existingMessage) {
-                existingMessage.remove();
-            }
-
-            // Create new message
-            var messageDiv = document.createElement('div');
-            messageDiv.className = 'save-message ' + type;
-            messageDiv.textContent = message;
-
-            // Add styles
-            messageDiv.style.cssText = `
-                position: fixed;
-                top: 14px;
-                right: 20px;
-                padding: 10px 20px;
-                border-radius: 4px;
-                color: white;
-                font-weight: bold;
-                z-index: 1000;
-                transition: opacity 0.3s;
-            `;
-
-            if (type === 'success') {
-                messageDiv.style.backgroundColor = '#27ae60';
-            } else if (type === 'error') {
-                messageDiv.style.backgroundColor = '#e74c3c';
-            } else if (type === 'info') {
-                messageDiv.style.backgroundColor = '#3498db';
-            }
-
-            document.body.appendChild(messageDiv);
-
-            // Auto remove after 3 seconds
-            setTimeout(function() {
-                messageDiv.style.opacity = '0';
-                setTimeout(function() {
-                    if (messageDiv.parentNode) {
-                        messageDiv.parentNode.removeChild(messageDiv);
-                    }
-                }, 300);
-            }, 3000);
-        }
-    });
+    
+    // Initialize when document is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initEditor);
+    } else {
+        initEditor();
+    }
 </script>
+
 {{end}}
