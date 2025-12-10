@@ -1,13 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -41,6 +45,13 @@ type WSMessage struct {
 	Content   string `json:"content"`
 	Username  string `json:"username"`
 	SessionID string `json:"session_id"`
+}
+
+// Response for interpretation
+type InterpretResponse struct {
+	Success bool   `json:"success"`
+	Output  string `json:"output,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 func authFromJwt(r *http.Request) (string, error) {
@@ -336,6 +347,111 @@ func saveSessionHandler(w http.ResponseWriter, r *http.Request) {
 	// Return success response
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(SaveResponse{Success: true})
+}
+
+// interpretHandler runs Python code inside a docker container and returns output
+func interpretHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	username, err := authFromJwt(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var payload struct {
+		SessionID string `json:"session_id"`
+		Content   string `json:"content"`
+		Stdin     string `json:"stdin,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "Invalid payload", http.StatusBadRequest)
+		return
+	}
+	if payload.SessionID == "" {
+		http.Error(w, "Session ID required", http.StatusBadRequest)
+		return
+	}
+	sid, err := strconv.Atoi(payload.SessionID)
+	if err != nil {
+		http.Error(w, "Invalid session id", http.StatusBadRequest)
+		return
+	}
+
+	// Verify session exists and user has access
+	var ownerUsername, language string
+	var ownerID int
+	err = db.QueryRow(`SELECT u.username, s.language, s.owner_id FROM sessions s JOIN users u ON s.owner_id = u.user_id WHERE s.session_id = ?`, sid).Scan(&ownerUsername, &language, &ownerID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "Session not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, "DB error", http.StatusInternalServerError)
+		return
+	}
+
+	// access check
+	if ownerUsername != username {
+		var collabCount int
+		err = db.QueryRow(`SELECT COUNT(*) FROM collabs c JOIN users u ON c.user_id = u.user_id WHERE c.session_id = ? AND u.username = ?`, sid, username).Scan(&collabCount)
+		if err != nil {
+			http.Error(w, "DB error", http.StatusInternalServerError)
+			return
+		}
+		if collabCount == 0 {
+			http.Error(w, "Access denied", http.StatusForbidden)
+			return
+		}
+	}
+
+	if strings.ToLower(language) != "python" {
+		http.Error(w, "Interpretation is only supported for python sessions", http.StatusBadRequest)
+		return
+	}
+
+	// Ensure docker image exists, otherwise try to build it
+	img := "cocode-python-runner:latest"
+	if err := exec.Command("docker", "inspect", "--type=image", img).Run(); err != nil {
+		// try to build
+		buildCmd := exec.Command("docker", "build", "-t", img, "docker/python-runner")
+		var b bytes.Buffer
+		buildCmd.Stdout = &b
+		buildCmd.Stderr = &b
+		if err := buildCmd.Run(); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(InterpretResponse{Success: false, Error: "Failed to build python runner image: " + b.String()})
+			return
+		}
+	}
+
+	// Run the code inside docker with timeout and limited resources
+	// Use a shell heredoc to create the script inside the container so stdin can be reserved for the program input
+	// Build a shell command that writes the script from a quoted heredoc and then runs it
+	safeCmd := "cat > /home/runner/script.py <<'PY'\n" + payload.Content + "\nPY\npython -u /home/runner/script.py"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "-i", "--network", "none", "--memory", "256m", "--cpus", "0.5", img, "sh", "-lc", safeCmd)
+	// Provide user-supplied program input on stdin (if any)
+	if payload.Stdin != "" {
+		cmd.Stdin = strings.NewReader(payload.Stdin)
+	}
+	out, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		json.NewEncoder(w).Encode(InterpretResponse{Success: false, Error: "Execution timed out"})
+		return
+	}
+	if err != nil {
+		// include output
+		json.NewEncoder(w).Encode(InterpretResponse{Success: false, Error: err.Error(), Output: string(out)})
+		return
+	}
+
+	// Success
+	json.NewEncoder(w).Encode(InterpretResponse{Success: true, Output: string(out)})
 }
 
 // Update the editorHandler to properly handle content

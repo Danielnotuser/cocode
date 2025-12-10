@@ -28,7 +28,35 @@
     <div class="editor-area">
         <label><textarea id="code-editor"></textarea></label>
     </div>
+    <div class="editor-actions" style="margin-top:10px;">
+        <!-- Interpret button shown only for python sessions -->
+        {{if eq .Session.Language "Python"}}
+        <button id="interpret-btn" class="collab-btn">Interpret</button>
+        <span id="interpret-status" style="margin-left:12px; color:#666"></span>
+        {{end}}
+    </div>
+
+    {{if eq .Session.Language "Python"}}
+    <div class="editor-inputs" style="margin-top:12px;">
+        <label style="display:block; margin-bottom:6px; color:#666">Program Input (stdin):</label>
+        <textarea id="program-stdin" placeholder="Enter input for the program (stdin)" style="width:100%; min-height:80px; font-family:monospace;"></textarea>
+    </div>
+    {{end}}
+
+    <div id="interpret-output" style="white-space:pre-wrap; background:#1e1e1e; color:#ddd; padding:10px; margin-top:12px; border-radius:4px; display:none; max-height:400px; overflow:auto;"></div>
 </div>
+
+{{if eq .Session.Language "HTML"}}
+<div class="html-preview-container" style="max-width:1200px; margin:0 auto; padding: 0 2rem;">
+    <div style="display:flex; gap:12px; align-items:center; margin-top:12px;">
+        <label style="color:#666;">Live Preview</label>
+        <button id="refresh-preview" class="collab-btn" style="padding:6px 10px;">Refresh</button>
+        <label style="margin-left:12px; color:#666; display:flex; gap:6px; align-items:center;"><input id="auto-preview" type="checkbox" checked> Auto-update</label>
+        <label style="margin-left:12px; color:#666; display:flex; gap:6px; align-items:center;"><input id="allow-scripts" type="checkbox"> Allow scripts</label>
+    </div>
+    <iframe id="html-preview" sandbox="" style="width:100%; height:400px; border:1px solid #ddd; margin-top:8px; border-radius:6px;"></iframe>
+</div>
+{{end}}
 
 <!-- Load frontend bundle (contains CodeMirror + Yjs) -->
 <script src="/static/app.js"></script>
@@ -38,29 +66,178 @@
     function initEditor() {
         try {
             console.log('[Yjs] Initializing editor with CRDT support');
-            
+
             // Check if functions are available
             if (typeof window.initializeYjsEditor !== 'function') {
                 throw new Error('initializeYjsEditor not found in window');
             }
-            
+
             const { ydoc, provider, binding, editor } = window.initializeYjsEditor(
-                "{{.SessionID}}", 
-                "{{.Username}}", 
-                "{{.Session.Language}}", 
+                "{{.SessionID}}",
+                "{{.Username}}",
+                "{{.Session.Language}}",
                 `{{.Session.Content}}`
             );
-            
+
+            // Expose the editor to global scope for buttons to read content
+            window.activeEditor = editor;
+
             // Cleanup on unload
             window.addEventListener('beforeunload', () => {
                 window.cleanupYjs(provider);
             });
-            
+
+            // Setup interpret button if available
+            const interpretBtn = document.getElementById('interpret-btn');
+            if (interpretBtn) {
+                interpretBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    const statusEl = document.getElementById('interpret-status');
+                    const outputEl = document.getElementById('interpret-output');
+                    if (statusEl) {
+                        statusEl.textContent = 'Running...';
+                        statusEl.style.color = '#FF9800';
+                    }
+                    if (outputEl) {
+                        outputEl.style.display = 'none';
+                        outputEl.textContent = '';
+                    }
+
+                    // Get code from active editor or fallback textarea
+                    let code = '';
+                    try {
+                        if (window.activeEditor && typeof window.activeEditor.getValue === 'function') {
+                            code = window.activeEditor.getValue();
+                        } else {
+                            const ta = document.getElementById('code-editor');
+                            code = ta ? ta.value : '';
+                        }
+                    } catch (err) {
+                        code = '';
+                    }
+
+                    // send to server (include stdin if present)
+                    try {
+                        const stdinArea = document.getElementById('program-stdin');
+                        const stdinVal = stdinArea ? stdinArea.value : '';
+                        const resp = await fetch('/interpret', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ session_id: "{{.SessionID}}", content: code, stdin: stdinVal })
+                        });
+                        const data = await resp.json();
+                        const hasError = !resp.ok || data.error;
+                        if (hasError) {
+                            if (statusEl) {
+                                statusEl.textContent = 'Error';
+                                statusEl.style.color = '#f44336';
+                            }
+                            // Show both error message and any captured output (stdout/stderr)
+                            let combined = '';
+                            if (data.error) {
+                                combined += 'Error: ' + data.error;
+                            }
+                            if (data.output) {
+                                if (combined) combined += '\n\n';
+                                combined += data.output;
+                            }
+                            if (!combined) combined = 'Unknown error';
+                            if (outputEl) {
+                                outputEl.style.display = 'block';
+                                outputEl.textContent = combined;
+                                outputEl.style.color = '#f44336';
+                            }
+                        } else {
+                            if (statusEl) {
+                                statusEl.textContent = 'Finished';
+                                statusEl.style.color = '#4CAF50';
+                            }
+                            if (outputEl) {
+                                outputEl.style.display = 'block';
+                                outputEl.textContent = data.output || '';
+                                outputEl.style.color = '#ddd';
+                            }
+                        }
+                    } catch (err) {
+                        if (statusEl) {
+                            statusEl.textContent = 'Error';
+                            statusEl.style.color = '#f44336';
+                        }
+                        const outputEl2 = document.getElementById('interpret-output');
+                        if (outputEl2) {
+                            outputEl2.style.display = 'block';
+                            outputEl2.textContent = String(err);
+                        }
+                    }
+                });
+            }
+
             console.log('[Yjs] Editor initialized with collaborative editing');
+            // HTML preview support (live render) — only for HTML sessions
+            try {
+                if ("{{.Session.Language}}" === "HTML") {
+                    const previewIframe = document.getElementById('html-preview');
+                    const refreshBtn = document.getElementById('refresh-preview');
+                    const autoCheckbox = document.getElementById('auto-preview');
+                    const allowScripts = document.getElementById('allow-scripts');
+
+                    const updatePreview = () => {
+                        try {
+                            let content = '';
+                            if (window.activeEditor && typeof window.activeEditor.getValue === 'function') {
+                                content = window.activeEditor.getValue();
+                            } else {
+                                const ta = document.getElementById('code-editor');
+                                content = ta ? ta.value : '';
+                            }
+                            if (!previewIframe) return;
+                            // Set sandbox according to allowScripts checkbox
+                            if (allowScripts && allowScripts.checked) {
+                                previewIframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-forms');
+                            } else {
+                                previewIframe.setAttribute('sandbox', '');
+                            }
+                            previewIframe.srcdoc = content;
+                        } catch (err) {
+                            console.error('[Preview] update error', err);
+                        }
+                    };
+
+                    // Debounce helper
+                    let previewTimer = null;
+                    const scheduleUpdate = (delay = 300) => {
+                        if (previewTimer) clearTimeout(previewTimer);
+                        previewTimer = setTimeout(() => { updatePreview(); previewTimer = null; }, delay);
+                    };
+
+                    // Hook editor changes if available
+                    if (window.activeEditor && typeof window.activeEditor.on === 'function') {
+                        // CodeMirror 5 uses .on('change', ...)
+                        window.activeEditor.on('change', () => {
+                            if (autoCheckbox && autoCheckbox.checked) scheduleUpdate(300);
+                        });
+                    } else {
+                        // Fallback: poll textarea
+                        const ta = document.getElementById('code-editor');
+                        if (ta && autoCheckbox && autoCheckbox.checked) {
+                            ta.addEventListener('input', () => { if (autoCheckbox.checked) scheduleUpdate(300); });
+                        }
+                    }
+
+                    if (refreshBtn) refreshBtn.addEventListener('click', (e) => { e.preventDefault(); updatePreview(); });
+                    if (autoCheckbox) autoCheckbox.addEventListener('change', () => { if (autoCheckbox.checked) scheduleUpdate(0); });
+                    if (allowScripts) allowScripts.addEventListener('change', () => { updatePreview(); });
+
+                    // Initial render
+                    scheduleUpdate(50);
+                }
+            } catch (err) {
+                console.warn('[Preview] initialization failed', err);
+            }
         } catch (error) {
             console.error('[Yjs] Error initializing editor:', error);
             console.error('Stack:', error.stack);
-            
+
             const statusEl = document.getElementById('connection-status');
             if (statusEl) {
                 statusEl.textContent = '✗ Error: ' + error.message;
@@ -68,7 +245,7 @@
             }
         }
     }
-    
+
     // Initialize when document is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initEditor);
