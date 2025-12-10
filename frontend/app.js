@@ -11,13 +11,14 @@ import { IndexeddbPersistence } from 'y-indexeddb'
 // Import CodeMirror and required modes/addons so esbuild bundles them into static/app.js.
 // This avoids loading a separate CDN copy and ensures addons like defineSimpleMode are present.
 import CodeMirrorLib from 'codemirror';
-import 'codemirror/lib/codemirror.css';
 import 'codemirror/mode/javascript/javascript.js';
 import 'codemirror/mode/python/python.js';
 import 'codemirror/mode/go/go.js';
 import 'codemirror/mode/xml/xml.js';
 import 'codemirror/mode/css/css.js';
 import 'codemirror/mode/clike/clike.js';
+import 'codemirror/mode/sql/sql.js';
+import 'codemirror/mode/markdown/markdown.js';
 import 'codemirror/mode/rust/rust.js';
 import 'codemirror/addon/edit/matchbrackets.js';
 import 'codemirror/addon/edit/closebrackets.js';
@@ -38,7 +39,9 @@ const MODE_MAP = {
   'HTML': 'htmlmixed',
   'CSS': 'css',
   'C++': 'text/x-c++src',
-  'Rust': 'text/x-rustsrc'
+  'Rust': 'text/x-rustsrc',
+  'SQL': 'sql',
+  'Markdown': 'markdown'
 };
 
 /**
