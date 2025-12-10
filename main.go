@@ -64,6 +64,7 @@ func main() {
 	http.HandleFunc("/create-session", createSessionHandler)
 	http.HandleFunc("/add-collab", addCollabHandler)
 	http.HandleFunc("/editor", editorHandler)
+	http.HandleFunc("/interpret", interpretHandler)
 	http.HandleFunc("/delete-session", deleteSessionHandler)
 	http.HandleFunc("/save-session", saveSessionHandler)
 	//http.HandleFunc("/ws", serveYjsWs)

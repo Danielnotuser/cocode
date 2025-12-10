@@ -28,6 +28,15 @@
     <div class="editor-area">
         <label><textarea id="code-editor"></textarea></label>
     </div>
+    <div class="editor-actions" style="margin-top:10px;">
+        <!-- Interpret button shown only for python sessions -->
+        {{if eq .Session.Language "Python"}}
+        <button id="interpret-btn" class="collab-btn">Interpret</button>
+        <span id="interpret-status" style="margin-left:12px; color:#666"></span>
+        {{end}}
+    </div>
+
+    <div id="interpret-output" style="white-space:pre-wrap; background:#1e1e1e; color:#ddd; padding:10px; margin-top:12px; border-radius:4px; display:none; max-height:400px; overflow:auto;"></div>
 </div>
 
 <!-- Load frontend bundle (contains CodeMirror + Yjs) -->
@@ -38,29 +47,105 @@
     function initEditor() {
         try {
             console.log('[Yjs] Initializing editor with CRDT support');
-            
+
             // Check if functions are available
             if (typeof window.initializeYjsEditor !== 'function') {
                 throw new Error('initializeYjsEditor not found in window');
             }
-            
+
             const { ydoc, provider, binding, editor } = window.initializeYjsEditor(
-                "{{.SessionID}}", 
-                "{{.Username}}", 
-                "{{.Session.Language}}", 
+                "{{.SessionID}}",
+                "{{.Username}}",
+                "{{.Session.Language}}",
                 `{{.Session.Content}}`
             );
-            
+
+            // Expose the editor to global scope for buttons to read content
+            window.activeEditor = editor;
+
             // Cleanup on unload
             window.addEventListener('beforeunload', () => {
                 window.cleanupYjs(provider);
             });
-            
+
+            // Setup interpret button if available
+            const interpretBtn = document.getElementById('interpret-btn');
+            if (interpretBtn) {
+                interpretBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    const statusEl = document.getElementById('interpret-status');
+                    const outputEl = document.getElementById('interpret-output');
+                    if (statusEl) {
+                        statusEl.textContent = 'Running...';
+                        statusEl.style.color = '#FF9800';
+                    }
+                    if (outputEl) {
+                        outputEl.style.display = 'none';
+                        outputEl.textContent = '';
+                    }
+
+                    // Get code from active editor or fallback textarea
+                    let code = '';
+                    try {
+                        if (window.activeEditor && typeof window.activeEditor.getValue === 'function') {
+                            code = window.activeEditor.getValue();
+                        } else {
+                            const ta = document.getElementById('code-editor');
+                            code = ta ? ta.value : '';
+                        }
+                    } catch (err) {
+                        code = '';
+                    }
+
+                    // send to server
+                    try {
+                        const resp = await fetch('/interpret', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ session_id: "{{.SessionID}}", content: code })
+                        });
+                        const data = await resp.json();
+                        if (!resp.ok || data.error) {
+                            if (statusEl) {
+                                statusEl.textContent = 'Error';
+                                statusEl.style.color = '#f44336';
+                            }
+                            const errText = data.error || 'Unknown error';
+                            if (outputEl) {
+                                outputEl.style.display = 'block';
+                                outputEl.textContent = errText;
+                                outputEl.style.color = '#f44336';
+                            }
+                        } else {
+                            if (statusEl) {
+                                statusEl.textContent = 'Finished';
+                                statusEl.style.color = '#4CAF50';
+                            }
+                            if (outputEl) {
+                                outputEl.style.display = 'block';
+                                outputEl.textContent = data.output || '';
+                                outputEl.style.color = '#ddd';
+                            }
+                        }
+                    } catch (err) {
+                        if (statusEl) {
+                            statusEl.textContent = 'Error';
+                            statusEl.style.color = '#f44336';
+                        }
+                        const outputEl2 = document.getElementById('interpret-output');
+                        if (outputEl2) {
+                            outputEl2.style.display = 'block';
+                            outputEl2.textContent = String(err);
+                        }
+                    }
+                });
+            }
+
             console.log('[Yjs] Editor initialized with collaborative editing');
         } catch (error) {
             console.error('[Yjs] Error initializing editor:', error);
             console.error('Stack:', error.stack);
-            
+
             const statusEl = document.getElementById('connection-status');
             if (statusEl) {
                 statusEl.textContent = '✗ Error: ' + error.message;
@@ -68,7 +153,7 @@
             }
         }
     }
-    
+
     // Initialize when document is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', initEditor);
